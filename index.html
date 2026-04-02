@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Spore: Gourmet Mushroom Farm</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+    <header class="game-header" style="flex-wrap: wrap; gap: 10px;">
+        <h1>Pixel Spore Farm</h1>
+        <div class="stats" style="flex: 2; display: flex; flex-wrap: wrap; gap: 15px;">
+            <div style="color:#5eff6b;">Money: $<span id="money-display">500.00</span></div>
+            <div>Substrate: <span id="pellets-display">0</span> lbs / <span id="sterile-display">0</span> Blocks</div>
+            <div title="Business Rating">Rep: <span id="rep-display" style="color:#ffd700;">★☆☆☆☆</span></div>
+            <div style="color:#5ea1ff; font-weight:bold;">🕒 <span id="clock-display">Spring, Day 1 - 08:00</span></div>
+            <div><span id="temp-display" style="color:#ffde5e;">65</span>°F</div>
+        </div>
+        <div style="flex:none; display:flex; gap:10px;">
+            <button id="btn-music" class="pixel-btn" style="border-color:#ff5e5e; color:#ff5e5e; background:#1a2430;">🔇 Music</button>
+            <button id="btn-contracts" class="pixel-btn" style="border-color:#ff9900; color:#ff9900; background:#1a2430;">👔 Contracts</button>
+            <button id="btn-cooler" class="pixel-btn" style="border-color:#5ea1ff; color:#fff; background:#1a2430;">🧊 Cooler (<span>0</span>lbs)</button>
+            <button id="btn-encyclopedia" class="pixel-btn" style="border-color:#5ea1ff; color:#5ea1ff;">🍄 Encyclopedia</button>
+        </div>
+    </header>
+
+    <main class="game-container">
+        <!-- Left Panel: The Farm Canvas -->
+        <section class="panel farm-panel">
+            <h2>The Farm Canvas</h2>
+            <div class="farm-stats">
+                <div>Region: <span id="region-display" style="color:#ffde5e;">Unknown</span></div>
+                <div>Capacity: <span id="capacity-display">10</span> lbs</div>
+                <div>Demand: <span id="demand-display">10</span> lbs</div>
+            </div>
+            <div style="display:flex; justify-content:center; margin-top: 10px;">
+                <canvas id="gameCanvas" width="400" height="400" style="border: 4px solid #222; image-rendering: pixelated;"></canvas>
+            </div>
+            <!-- Dynamic tent list below canvas -->
+            <div id="tents-container" style="margin-top: 20px;">
+                <!-- Generated dynamically via JS -->
+            </div>
+            <h2 style="margin-top:20px;">Incubation Shelf</h2>
+            <div id="incubation-container" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+                <!-- Grain Bags go here -->
+            </div>
+        </section>
+
+        <div class="right-panels">
+            <!-- Center Panel: Actions -->
+            <section class="panel action-panel">
+                <h2>Commands</h2>
+                <div class="action-buttons">
+                    <div class="action-buttons" style="display:flex; gap:5px; margin-bottom: 10px;">
+                        <button id="btn-buy-pellets" class="pixel-btn" style="flex:1;">Buy Pellets ($20/100lb)</button>
+                        <button id="btn-sterilize" class="pixel-btn" style="flex:1;">Sterilize Block</button>
+                    </div>
+                    <div style="display: flex; gap: 5px; align-items: stretch; flex:1;">
+                        <button id="btn-inoculate-grain" class="pixel-btn" style="flex:2;">Inoculate Grain ($10)</button>
+                        <select id="species-select" class="pixel-select" style="flex:1;">
+                            <option value="blue">Blue Oyster [+20% Yield]</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="action-buttons" style="margin-top:10px;">
+                    <button id="btn-spawn-bulk" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b;" title="Requires 1 Colonized Grain Bag + 1 Sterile Block">Spawn to Bulk</button>
+                    <button id="btn-discard-mold" class="pixel-btn" style="border-color:#ff5e5e; color:#ff5e5e;">Discard Mold</button>
+                    <button id="btn-clear-spent" class="pixel-btn" style="border-color:#b56a47; color:#b56a47;">Clear Spent Tent</button>
+                    <button id="btn-harvest-auto" class="pixel-btn">Harvest Fullest</button>
+                    <button id="btn-pitch" class="pixel-btn" style="border-color: #ff9900; color: #ff9900;">Pitch ($50+5lbs)</button>
+                    <button id="btn-sell" class="pixel-btn sell">Sell to Market</button>
+                </div>
+                
+                <h2 style="margin-top: 20px;">Processed Goods</h2>
+                <div class="farm-stats" style="margin-bottom: 10px; border-bottom: 2px dashed #444; padding-bottom:10px;">
+                    <div>Powder: <span id="powder-display">0</span> lbs </div>
+                    <div>Tinctures: <span id="tincture-display">0</span> btls</div>
+                </div>
+                <div class="action-buttons">
+                    <button id="btn-dehydrate" class="pixel-btn" style="border-color:#ccc; color:#ccc;">Dehydrate (10lbs)</button>
+                    <button id="btn-extract" class="pixel-btn" style="border-color:#5ea1ff; color:#5ea1ff;">Extract (5lb LM)</button>
+                    <button id="btn-sell-goods" class="pixel-btn sell">Sell Goods</button>
+                </div>
+
+                <div id="log" class="game-log" style="height: 100px; margin-top:15px;"></div>
+            </section>
+
+            <!-- Right Panel: Market & Upgrades -->
+            <section class="panel upgrade-panel">
+                <h2 style="color:#5ea1ff;">Administration Dashboard</h2>
+                <div class="upgrade-list" style="display:flex; flex-direction:column; gap:15px;">
+                    <button id="btn-cat-strains" class="pixel-btn" style="border-color:#ff9900; color:#ff9900; background:#1a2430; width: 100%; padding:15px; font-size:14px;">🍄 Cultivation Strains</button>
+                    <button id="btn-cat-facilities" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; background:#1a2430; width: 100%; padding:15px; font-size:14px;">⛺ Fruiting Facilities</button>
+                    <button id="btn-cat-lab" class="pixel-btn" style="border-color:#5ea1ff; color:#5ea1ff; background:#1a2430; width: 100%; padding:15px; font-size:14px;">🔬 Lab & Substrate Ops</button>
+                    <button id="btn-cat-logistics" class="pixel-btn" style="border-color:#ffde5e; color:#ffde5e; background:#1a2430; width: 100%; padding:15px; font-size:14px;">🏭 Commercial Logistics</button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Preload Assets -->
+    <div style="display:none;">
+        <img id="img-floor" src="floor_tile.png" alt="floor">
+        <img id="img-operator" src="op_34.png" alt="operator">
+        <img id="img-tent" src="tent_34.png" alt="tent">
+        <img id="img-shroom" src="pixel_mushroom.png" alt="shroom">
+        <img id="img-sales" src="salesperson_34.png" alt="salesperson">
+        <img id="img-office" src="office_34.png" alt="office">
+        <!-- Phase 5 Assets -->
+        <img id="img-market" src="market_34.png" alt="market tent">
+        <img id="img-dehydrator" src="dehydrator_34.png" alt="dehydrator">
+        <img id="img-tlab" src="tlab_34.png" alt="tlab">
+        <img id="img-shiitake" src="shiitake.png" alt="shiitake">
+        <img id="img-lions" src="lions_mane.png" alt="lions">
+        <!-- Phase 7/8 Assets -->
+        <img id="img-sab" src="sab_34.png" alt="sab">
+        <img id="img-flowhood" src="flowhood_34.png" alt="flowhood">
+        <img id="img-mulch" src="mulch_bin_34.png" alt="mulch">
+        <!-- Phase 9 Assets -->
+        <img id="img-pc" src="pressure_cooker_34.png" alt="cooker">
+        <img id="img-barrel" src="steam_barrel_34.png" alt="barrel">
+    </div>
+
+    <!-- The Encyclopedia Modal -->
+    <div id="modal-encyclopedia" class="modal-overlay">
+        <div class="modal-content">
+            <span class="modal-close" id="btn-close-modal">X</span>
+            <h2 style="color:#5ea1ff; margin-top:0;">Mushroom Encyclopedia 🗄️</h2>
+            <p style="font-size:10px; color:#aaa; line-height:1.4;">Research genetics to reveal their optimal fruiting temperatures, humidity, and yield stats. You cannot inoculate a strain until it is fully researched!</p>
+            <div class="encyclopedia-grid" id="encyclopedia-grid">
+                <!-- Injected via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- The Cooler Modal -->
+    <div id="modal-cooler" class="modal-overlay">
+        <div class="modal-content" style="border-color:#5ea1ff; background:#111;">
+            <span class="modal-close" id="btn-close-cooler">X</span>
+            <h2 style="color:#5ea1ff; margin-top:0;">Walk-In Cooler 🧊</h2>
+            <p style="font-size:10px; color:#aaa; line-height:1.4;">Your active harvested batches. They will slowly spoil based on their specific spoilage timer! Sell them quickly or pitch them.</p>
+            <div class="cooler-grid" id="cooler-grid">
+                <!-- Injected via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- The B2B Contracts Modal (Dashboard) -->
+    <div id="modal-contracts" class="modal-overlay">
+        <div class="modal-content" style="border-color:#ff9900; background:#2a1f1a;">
+            <span class="modal-close" id="btn-close-contracts">X</span>
+            <h2 style="color:#ff9900; margin-top:0;">B2B Contracts 👔</h2>
+            <p style="font-size:10px; color:#aaa; line-height:1.4;">Active commercial clients secured by your Sales desk. These provide massive recurring baseline demand!</p>
+            <div id="contracts-grid" style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
+                <!-- Injected via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Client Acquisition Popup -->
+    <div id="modal-acquisition" class="modal-overlay" style="z-index: 2000;">
+        <div class="modal-content" style="border-color:#5eff6b; background:#1a221b; text-align:center; max-width: 400px;">
+            <h2 style="color:#5eff6b; margin-top:0; font-size: 14px;">CLIENT SECURED! 🤝</h2>
+            <img id="acq-portrait" src="" style="width: 64px; height: 64px; border: 2px solid #5eff6b; margin: 10px 0; image-rendering: pixelated;">
+            <h3 id="acq-name" style="color:#fff; margin:0px;">Luigi's Pizza</h3>
+            <p id="acq-dialogue" style="font-size:10px; color:#aaa; font-style:italic; padding: 10px; background:#111; border-radius: 4px;">"We'll take everything you've got!"</p>
+            <p id="acq-stats" style="color:#ffde5e; font-size:10px;">+2 Base Demand</p>
+            <button id="btn-sign-contract" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; width:100%; margin-top:10px;">Sign Contract</button>
+        </div>
+    </div>
+
+    <!-- Tiered Equipment/Upgrades Modal -->
+    <div id="modal-equipment" class="modal-overlay" style="z-index: 2100;">
+        <div class="modal-content" style="border-color:#ff9900; background:#222; max-width: 600px; width:100%;">
+            <span class="modal-close" id="btn-close-equipment">X</span>
+            <h2 style="color:#ff9900; margin-top:0;">Facility Infrastructure ⚙️</h2>
+            <p style="font-size:10px; color:#aaa; line-height:1.4;">Upgrade your farm's throughput capacity by purchasing industrial equipment. High tiers unlock massive operational scale but increase overhead energy costs.</p>
+            <div id="equipment-grid" style="display:flex; flex-direction:column; gap:15px; margin-top:15px; max-height: 60vh; overflow-y:auto; padding-right:10px;">
+                <!-- Dynamically populated via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Menu Splash Screen -->
+    <div id="modal-splash" class="modal-overlay" style="z-index: 9999; background: #111; display:flex;">
+        <div class="modal-content" style="border-color:#5ea1ff; background:#1a2430; max-width: 500px; text-align: center;">
+            <h1 style="color:#5eff6b; font-size: 28px; margin-bottom: 5px; text-shadow: 2px 2px #000;">Pixel Spore Farm Simulation</h1>
+            <p style="color:#aaa; font-size: 12px; margin-bottom: 25px;">Design your farm's startup constraints before beginning the simulation loop.</p>
+            
+            <div style="text-align: left; background:#000; padding:15px; border-radius:8px; border:2px solid #444; margin-bottom: 20px;">
+                <label style="display:block; color:#ffde5e; margin-bottom:5px; font-weight:bold;">Starting Capital ($)</label>
+                <input type="number" id="setup-funding" class="pixel-select" style="width:100%; padding:10px; font-size:16px;" value="1500" min="500" max="1000000">
+                <p style="color:#888; font-size:10px; margin-top:5px; font-style:italic;">Inject initial VC funding or bootstrap from your garage.</p>
+            </div>
+
+            <div style="text-align: left; background:#000; padding:15px; border-radius:8px; border:2px solid #444; margin-bottom: 25px;">
+                <label style="display:block; color:#ffde5e; margin-bottom:5px; font-weight:bold;">Facility Location (Biome)</label>
+                <select id="setup-location" class="pixel-select" style="width:100%; padding:10px; font-size:14px;">
+                    <option value="pnw">Pacific Northwest (Mild/Rainy - Cheap cooling)</option>
+                    <option value="desert">Desert Southwest (Hot/Dry - High AC/Hum costs)</option>
+                    <option value="northeast">Northeast (Cold Winters - High heating costs)</option>
+                </select>
+                <p style="color:#888; font-size:10px; margin-top:5px; font-style:italic;">Your local geography permanently alters the ambient temperature baseline against your microclimates.</p>
+            </div>
+
+            <button id="btn-start-simulation" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; width:100%; font-size: 20px; padding: 15px;">INITIALIZE FARM</button>
+        </div>
+    </div>
+
+    <!-- Immersive Cutscene UI -->
+    <div id="modal-cutscene" class="modal-overlay" style="z-index: 3000; background: rgba(0,0,0,0.95); flex-direction: column;">
+        <h2 id="cutscene-title" style="color:#ffd700; margin-bottom: 20px; font-size: 24px; text-shadow: 2px 2px #000; letter-spacing: 2px; text-transform: uppercase;">WORKING...</h2>
+        <div style="border: 4px solid #444; overflow: hidden; max-width: 512px; max-height: 512px; border-radius: 8px; position:relative;">
+            <img id="cutscene-img" src="" class="cutscene-img" style="width: 100%; height: auto; image-rendering: pixelated;">
+            <img id="cutscene-overlay-img" src="" style="position:absolute; bottom:10%; right:10%; width:128px; height:128px; image-rendering: pixelated; display:none; animation: pop 0.5s ease-out forwards;">
+        </div>
+    </div>
+
+    <audio id="bgm">
+        <source src="bgm1.mp3" type="audio/mpeg">
+    </audio>
+
+    <script src="app.js?v=14"></script>
+</body>
+</html>
