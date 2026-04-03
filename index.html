@@ -12,18 +12,23 @@
         <h1>Pixel Spore Farm</h1>
         <div class="stats" style="flex: 2; display: flex; flex-wrap: wrap; gap: 15px;">
             <div style="color:#5eff6b;">Money: $<span id="money-display">500.00</span></div>
-            <div>Substrate: <span id="pellets-display">0</span> lbs / <span id="sterile-display">0</span> Blocks</div>
             <div title="Business Rating">Rep: <span id="rep-display" style="color:#ffd700;">★☆☆☆☆</span></div>
             <div style="color:#5ea1ff; font-weight:bold;">🕒 <span id="clock-display">Spring, Day 1 - 08:00</span></div>
             <div><span id="temp-display" style="color:#ffde5e;">65</span>°F</div>
         </div>
-        <div style="flex:none; display:flex; gap:10px;">
+        <div style="flex:none; display:flex; gap:10px; flex-wrap:wrap;">
+            <button id="btn-sleep" class="pixel-btn" style="border-color:#9b7fff; color:#9b7fff; background:#1a2430;">😴 Sleep</button>
             <button id="btn-music" class="pixel-btn" style="border-color:#ff5e5e; color:#ff5e5e; background:#1a2430;">🔇 Music</button>
+            <button id="btn-save" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; background:#1a2430;">💾 Save</button>
+            <button id="btn-load" class="pixel-btn" style="border-color:#ffde5e; color:#ffde5e; background:#1a2430;">📂 Load</button>
             <button id="btn-contracts" class="pixel-btn" style="border-color:#ff9900; color:#ff9900; background:#1a2430;">👔 Contracts</button>
-            <button id="btn-cooler" class="pixel-btn" style="border-color:#5ea1ff; color:#fff; background:#1a2430;">🧊 Cooler (<span>0</span>lbs)</button>
             <button id="btn-encyclopedia" class="pixel-btn" style="border-color:#5ea1ff; color:#5ea1ff;">🍄 Encyclopedia</button>
         </div>
     </header>
+    
+    <div id="cooler-shelf" style="display:flex; gap:10px; padding: 10px; background: #0c141d; border-bottom: 2px solid #333; overflow-x:auto;">
+        <span style="color:#555; align-self:center; font-size:10px;">Walk-In Cooler (Empty)</span>
+    </div>
 
     <main class="game-container">
         <!-- Left Panel: The Farm Canvas -->
@@ -41,9 +46,9 @@
             <div id="tents-container" style="margin-top: 20px;">
                 <!-- Generated dynamically via JS -->
             </div>
-            <h2 style="margin-top:20px;">Incubation Shelf</h2>
-            <div id="incubation-container" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
-                <!-- Grain Bags go here -->
+            <h2 style="margin-top:20px;">Materials Dashboard</h2>
+            <div id="substrate-dashboard" class="substrate-dashboard">
+                <!-- Visual blocks and grain bags go here -->
             </div>
         </section>
 
@@ -205,7 +210,75 @@
             </div>
 
             <button id="btn-start-simulation" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; width:100%; font-size: 20px; padding: 15px;">INITIALIZE FARM</button>
+            <button id="btn-continue" class="pixel-btn" style="border-color:#ffde5e; color:#ffde5e; width:100%; font-size:16px; padding:12px; margin-top:10px; display:none;">CONTINUE SAVED GAME</button>
         </div>
+    </div>
+
+    <!-- Bankruptcy Screen -->
+    <div id="modal-bankrupt" class="modal-overlay" style="z-index: 9998; background: rgba(0,0,0,0.97); display:none;">
+        <div class="modal-content" style="border-color:#ff5e5e; background:#1a0000; text-align:center; max-width:450px;">
+            <h1 style="color:#ff5e5e; font-size:22px;">BANKRUPTCY</h1>
+            <p style="color:#aaa; font-size:11px; line-height:1.6;">The farm has gone under. You have no assets left to liquidate and cannot cover operating costs.</p>
+            <div id="bankrupt-stats" style="color:#ffde5e; font-size:10px; margin:15px 0; line-height:2;"></div>
+            <button id="btn-restart" class="pixel-btn" style="border-color:#ff5e5e; color:#ff5e5e; width:100%; padding:15px;">RESTART FARM</button>
+        </div>
+    </div>
+
+    <!-- Win Screen -->
+    <div id="modal-win" class="modal-overlay" style="z-index: 9997; background: rgba(0,0,0,0.95); display:none;">
+        <div class="modal-content" style="border-color:#5eff6b; background:#001a00; text-align:center; max-width:450px;">
+            <h1 style="color:#5eff6b; font-size:20px;">FARM COMPLETE!</h1>
+            <p style="color:#aaa; font-size:11px; line-height:1.6;">You have built a thriving commercial mushroom operation. The market bows to your expertise!</p>
+            <div id="win-stats" style="color:#ffde5e; font-size:10px; margin:15px 0; line-height:2;"></div>
+            <button id="btn-continue-playing" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; width:100%; padding:15px; margin-top:10px;">KEEP FARMING</button>
+        </div>
+    </div>
+
+    <!-- Sleep / Fast-Forward Modal -->
+    <div id="modal-sleep" class="modal-overlay" style="z-index: 2600; display:none;">
+        <div class="modal-content" style="border-color:#9b7fff; background:#13101a; max-width:380px; text-align:center;">
+            <h2 style="color:#9b7fff; margin-top:0;">😴 Sleep Until...</h2>
+            <p style="font-size:10px; color:#aaa; line-height:1.4;">Time will pass at 50× speed while you sleep. The farm keeps running.</p>
+            <div style="display:flex; gap:10px; justify-content:center; margin:15px 0; align-items:center;">
+                <div>
+                    <label style="display:block; color:#ffde5e; font-size:9px; margin-bottom:4px;">Day (1-30)</label>
+                    <input type="number" id="sleep-day" class="pixel-select" style="width:80px; padding:8px; font-size:14px;" min="1" max="30" value="1">
+                </div>
+                <div>
+                    <label style="display:block; color:#ffde5e; font-size:9px; margin-bottom:4px;">Hour (0-23)</label>
+                    <input type="number" id="sleep-hour" class="pixel-select" style="width:80px; padding:8px; font-size:14px;" min="0" max="23" value="8">
+                </div>
+            </div>
+            <button id="btn-confirm-sleep" class="pixel-btn" style="border-color:#9b7fff; color:#9b7fff; width:100%; padding:12px; margin-bottom:8px;">Sleep</button>
+            <button id="btn-cancel-sleep" class="pixel-btn" style="border-color:#555; color:#aaa; width:100%; padding:8px;">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Spawn to Bulk Selection Modal -->
+    <div id="modal-spawn-select" class="modal-overlay" style="z-index: 2500; display:none;">
+        <div class="modal-content" style="border-color:#5eff6b; background:#1a2430; max-width:500px; width:100%;">
+            <span class="modal-close" id="btn-close-spawn-select">X</span>
+            <h2 style="color:#5eff6b; margin-top:0;">Spawn to Bulk 🍄</h2>
+            <p style="font-size:10px; color:#aaa; line-height:1.4;">Select a fully colonized grain bag and an empty fruiting tent, then confirm.</p>
+            <div style="display:flex; gap:15px; flex-wrap:wrap; margin-top:10px;">
+                <div style="flex:1; min-width:180px;">
+                    <h3 style="color:#ffde5e; font-size:12px; margin-bottom:8px;">Colonized Bags</h3>
+                    <div id="spawn-bag-list" style="display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto;"></div>
+                </div>
+                <div style="flex:1; min-width:180px;">
+                    <h3 style="color:#5ea1ff; font-size:12px; margin-bottom:8px;">Available Tents</h3>
+                    <div id="spawn-tent-list" style="display:flex; flex-direction:column; gap:6px;"></div>
+                </div>
+            </div>
+            <button id="btn-confirm-spawn" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; width:100%; margin-top:15px; opacity:0.4;" disabled>Spawn Selected</button>
+        </div>
+    </div>
+
+    <!-- Milestone Banner -->
+    <div id="milestone-banner" style="display:none; position:fixed; top:80px; left:50%; transform:translateX(-50%); z-index:8000; background:#1a2430; border:2px solid #ffde5e; padding:12px 20px; text-align:center; min-width:300px; pointer-events:none;">
+        <div style="color:#ffde5e; font-size:10px; margin-bottom:4px;">MILESTONE UNLOCKED</div>
+        <div id="milestone-label" style="color:#fff; font-size:12px; margin-bottom:4px;"></div>
+        <div id="milestone-reward" style="color:#5eff6b; font-size:10px;"></div>
     </div>
 
     <!-- Immersive Cutscene UI -->
@@ -217,10 +290,11 @@
         </div>
     </div>
 
-    <audio id="bgm">
-        <source src="bgm1.mp3" type="audio/mpeg">
-    </audio>
+    <audio id="bgm"></audio>
 
-    <script src="app.js?v=14"></script>
+    <script src="state.js?v=1"></script>
+    <script src="entities.js?v=1"></script>
+    <script src="engine.js?v=1"></script>
+    <script src="ui.js?v=1"></script>
 </body>
 </html>

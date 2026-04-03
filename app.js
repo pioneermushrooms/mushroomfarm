@@ -1,9 +1,13 @@
 // Game State
 const SPOIL_TIME = 60; // 60 seconds until rot
+const SAVE_KEY = 'pixelspore_save_v1';
 
 const state = {
-    money: 500, 
-    demand: 10,
+    money: 500,
+    demandBase: 10,
+    demandModifier: 1.0,
+    demandSeasonalMod: 1.0,
+    dailySalesVolume: 0,
     inventoryBatches: [], // { amount, timer, species }
     incubationBatches: [], // { id, species, colonization, contaminated, doomed }
     labLevel: 1, // 1 = SAB, 2 = Flow Hood
@@ -49,7 +53,10 @@ const state = {
         { id: 'wok', name: "Golden Wok", dialogue: "Fresh mushrooms! Very good! We buy everything!", boost: 4, img: 'sales.png', acquired: false },
         { id: 'vegan', name: "Hipster Vegan Cafe", dialogue: "Lion's mane makes a killer vegan crab cake substitute. Sign us up.", boost: 1, img: 'sales.png', acquired: false }
     ],
-    pendingClient: null
+    pendingClient: null,
+    gameOver: false,
+    gameWon: false,
+    milestonesAchieved: []
 };
 
 // DOM Elements
@@ -135,6 +142,153 @@ function deductInventory(amount, reqSpecies = null) {
     return true;
 }
 
+// ── Demand helpers ──────────────────────────────────────────────────────────
+function getEffectiveDemand() {
+    return Math.max(1, Math.round(state.demandBase * state.demandModifier * state.demandSeasonalMod));
+}
+
+function updateDemandDrift() {
+    const seasonalFactors = [1.0, 1.2, 1.3, 0.8]; // Spring/Summer/Fall/Winter
+    state.demandSeasonalMod = seasonalFactors[state.season];
+    const effective = getEffectiveDemand();
+    if (state.dailySalesVolume <= 0) {
+        // Unsatisfied market – scarcity drives interest up
+        state.demandModifier = Math.min(1.5, state.demandModifier + 0.05);
+    } else if (state.dailySalesVolume >= effective) {
+        // Oversupply – market saturates
+        state.demandModifier = Math.max(0.5, state.demandModifier - 0.03);
+    } else {
+        // Partial supply – gentle drift back to 1.0
+        state.demandModifier += (1.0 - state.demandModifier) * 0.1;
+    }
+    state.dailySalesVolume = 0;
+}
+
+// ── Tent microclimate helpers ────────────────────────────────────────────────
+function getTentGrowthMod(tent) {
+    const sd = state.speciesData[tent.species];
+    if (!sd) return 1.0;
+    const tempOk = tent.temp >= sd.tMin && tent.temp <= sd.tMax;
+    const humRatio = Math.min(tent.humidity / sd.hMin, 1.0);
+    const tempMod = tempOk ? 1.0 : 0.2;
+    const fanMod  = tent.hw.fan ? 1.2 : 1.0;
+    return tempMod * humRatio * fanMod;
+}
+
+function updateTentMicroclimates(dt) {
+    state.tents.forEach(tent => {
+        const targetTemp = tent.hw.ac ? 68 : state.ambientTemp;
+        tent.temp += (targetTemp - tent.temp) * Math.min(dt * 0.5, 1);
+        const humTarget = tent.hw.hum ? 90 : 40;
+        const humSpeed  = tent.hw.fan ? 0.8 : 0.2;
+        tent.humidity += (humTarget - tent.humidity) * Math.min(dt * humSpeed, 1);
+    });
+}
+
+// ── Save / Load ──────────────────────────────────────────────────────────────
+function saveGame() {
+    const saveData = { version: 1, timestamp: Date.now(), state: JSON.parse(JSON.stringify(state)) };
+    try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+        logMsg('Game saved!', 'success');
+    } catch(e) {
+        logMsg('Save failed (storage full?).', 'error');
+    }
+}
+
+function loadGame() {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) { logMsg('No save found.', 'error'); return false; }
+    try {
+        const saveData = JSON.parse(raw);
+        if (saveData.version !== 1) { logMsg('Save version mismatch.', 'error'); return false; }
+        Object.assign(state, saveData.state);
+        // Migrate saves that pre-date demandBase
+        if (state.demandBase === undefined) state.demandBase = state.demand || 10;
+        // Re-link pendingClient reference into roster
+        if (state.pendingClient) {
+            state.pendingClient = state.clientRoster.find(c => c.id === state.pendingClient.id) || null;
+        }
+        operator.x = 200; operator.y = 300;
+        operator.targetX = 200; operator.targetY = 300;
+        operator.actionQueue = null;
+        salesperson.x = 80; salesperson.y = 300;
+        salesperson.state = 'idle'; salesperson.timer = 10;
+        updateSpeciesDropdown();
+        updateUI();
+        return true;
+    } catch(e) {
+        logMsg('Save data corrupted.', 'error');
+        return false;
+    }
+}
+
+function hasSaveData() {
+    return localStorage.getItem(SAVE_KEY) !== null;
+}
+
+// ── Win / Lose ───────────────────────────────────────────────────────────────
+const MILESTONES = [
+    { id: 'first_harvest',  label: 'First Harvest',        check: () => getTotalInventory() > 0,                                                         reward: 'Welcome to the farm life.' },
+    { id: 'cash_500',       label: 'Seed Capital',         check: () => state.money >= 500,                                                               reward: '+$200 grant',                    action: () => { state.money += 200; } },
+    { id: 'cash_5000',      label: 'Breaking Even',        check: () => state.money >= 5000,                                                              reward: '+5 Base Market Demand',          action: () => { state.demandBase += 5; } },
+    { id: 'rep_3',          label: 'Trusted Supplier',     check: () => state.reputation >= 3,                                                            reward: 'Reputation builds demand.' },
+    { id: 'all_species',    label: 'Full Spectrum Farm',   check: () => Object.values(state.speciesData).every(sd => sd.isResearched),                    reward: '+$500 prestige bonus',           action: () => { state.money += 500; } },
+    { id: 'cash_50000',     label: 'Commercial Operation', check: () => state.money >= 50000,                                                             reward: 'Farm complete! Keep growing.',   action: () => { state.gameWon = true; showWinScreen(); } }
+];
+
+function checkMilestones() {
+    MILESTONES.forEach(m => {
+        if (!state.milestonesAchieved.includes(m.id) && m.check()) {
+            state.milestonesAchieved.push(m.id);
+            if (m.action) m.action();
+            logMsg(`MILESTONE: "${m.label}" — ${m.reward}`, 'success');
+            showMilestoneBanner(m.label, m.reward);
+        }
+    });
+}
+
+function showMilestoneBanner(label, reward) {
+    const banner = document.getElementById('milestone-banner');
+    document.getElementById('milestone-label').textContent = label;
+    document.getElementById('milestone-reward').textContent = reward;
+    banner.style.display = 'block';
+    clearTimeout(banner._hideTimer);
+    banner._hideTimer = setTimeout(() => { banner.style.display = 'none'; }, 4000);
+}
+
+function checkWinLoseConditions() {
+    if (!gameStarted || state.gameOver || state.gameWon) return;
+    checkMilestones();
+    if (state.money < 0) {
+        const canRecover = getTotalInventory() > 0 ||
+                           state.tents.some(t => t.isGrowing && t.currentCrop > 1) ||
+                           state.incubationBatches.some(b => b.colonization >= 100 && !b.isContaminated);
+        if (!canRecover) {
+            state.gameOver = true;
+            showBankruptcyScreen();
+        }
+    }
+}
+
+function showBankruptcyScreen() {
+    const el = document.getElementById('modal-bankrupt');
+    document.getElementById('bankrupt-stats').innerHTML =
+        `Days survived: ${state.day + (state.season * 30)}<br>` +
+        `Peak reputation: ${'★'.repeat(state.reputation)}<br>` +
+        `Clients secured: ${state.clientRoster.filter(c => c.acquired).length}`;
+    el.style.display = 'flex';
+}
+
+function showWinScreen() {
+    const el = document.getElementById('modal-win');
+    document.getElementById('win-stats').innerHTML =
+        `Final balance: $${state.money.toFixed(2)}<br>` +
+        `Reputation: ${'★'.repeat(state.reputation)}<br>` +
+        `Clients: ${state.clientRoster.filter(c => c.acquired).length} / ${state.clientRoster.length}`;
+    el.style.display = 'flex';
+}
+
 // Fixed Stations
 const stations = {
     flowHood: { x: 50, y: 30, w: 60, h: 40, name: "Flow Hood", color: "#444" },
@@ -153,9 +307,16 @@ function gameLoop(currentTime) {
     const dt = (currentTime - lastTime) / 1000;
     lastTime = currentTime;
 
+    if (state.gameOver) {
+        renderCanvas();
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+
     updateTime(dt);
     updatePhysics(dt);
     updateGrowthAndSpoil(dt);
+    updateTentMicroclimates(dt);
     updateSalesperson(dt);
     updateGardeners(dt);
     renderCanvas();
@@ -196,6 +357,9 @@ function updateTime(dt) {
                 state.season = (state.season + 1) % 4;
                 logMsg(`A new season has begun: ${SEASONS[state.season]}!`, 'success');
             }
+            updateDemandDrift();
+            checkWinLoseConditions();
+            saveGame();
         }
     }
     
@@ -347,7 +511,7 @@ function updatePhysics(dt) {
                         showAcquisitionModal(randomClient);
                         logMsg(`Pitch successful! Meeting secured with ${randomClient.name}.`, "success");
                     } else {
-                        state.demand += 10;
+                        state.demandBase += 10;
                         logMsg("Pitch SUCCESS! +10 lbs Market Demand! (All markets acquired)", "success");
                     }
                 } else {
@@ -377,26 +541,31 @@ function updatePhysics(dt) {
 function executeSale() {
     let inv = getTotalInventory();
     if (inv <= 0) { logMsg("No inventory to sell.", "error"); return; }
-    let toSell = Math.min(inv, state.demand);
+    const effective = getEffectiveDemand();
+    let toSell = Math.min(inv, effective);
     if(toSell <= 0) { logMsg("Market demand is full!", "error"); return; }
-    
+
     let earnings = 0;
+    let amountSold = 0;
     while(toSell > 0 && state.inventoryBatches.length > 0) {
         let b = state.inventoryBatches[0];
         let repBonus = (state.reputation - 1) * 2;
         let valPerLb = state.speciesData[b.species].val + repBonus;
         if (b.amount <= toSell) {
             earnings += b.amount * valPerLb;
+            amountSold += b.amount;
             toSell -= b.amount;
             state.inventoryBatches.shift();
         } else {
             earnings += toSell * valPerLb;
             b.amount -= toSell;
+            amountSold += toSell;
             toSell = 0;
         }
     }
     state.money += earnings;
-    logMsg(`Sold stock to Market for $${earnings}!`, "success");
+    state.dailySalesVolume += amountSold;
+    logMsg(`Sold ${amountSold} lbs to Market for $${earnings}!`, "success");
 }
 
 function updateSalesperson(dt) {
@@ -405,7 +574,7 @@ function updateSalesperson(dt) {
         salesperson.timer -= dt;
         if(salesperson.timer <= 0) {
             let inv = getTotalInventory();
-            if (Math.min(inv, state.demand) > 0) {
+            if (Math.min(inv, getEffectiveDemand()) > 0) {
                 salesperson.state = 'movingToShip';
                 salesperson.targetX = stations.shipping.x; salesperson.targetY = stations.shipping.y + 20;
             } else salesperson.timer = 5; 
@@ -434,8 +603,9 @@ function updateGrowthAndSpoil(dt) {
         if (!bag.isContaminated && bag.colonization < 100) {
             bag.colonization += state.speciesData[bag.species].colRate * dt;
             if (bag.colonization >= 100) bag.colonization = 100;
-            // Reveal contamination randomly during growth
-            if (bag.doomed && bag.colonization > 30 && Math.random() < 0.05) {
+            // Reveal contamination randomly during growth (hot ambient = higher risk)
+            const contamRisk = (state.ambientTemp > 80) ? 0.10 : 0.05;
+            if (bag.doomed && bag.colonization > 30 && Math.random() < contamRisk) {
                 bag.isContaminated = true;
                 logMsg(`Trichoderma Mold! Bag #${bag.id} ruined.`, "error");
             }
@@ -445,7 +615,7 @@ function updateGrowthAndSpoil(dt) {
     // Growth
     state.tents.forEach(tent => {
         if (tent.isGrowing && tent.currentCrop < tent.capacity) {
-            tent.currentCrop += state.speciesData[tent.species].rate * dt;
+            tent.currentCrop += state.speciesData[tent.species].rate * getTentGrowthMod(tent) * dt;
             if (tent.currentCrop >= tent.capacity) {
                 tent.currentCrop = tent.capacity; tent.isGrowing = false; 
                 logMsg(`Tent #${tent.id} max capacity!`, "success");
@@ -891,9 +1061,6 @@ function updateUI() {
     const totInv = Math.floor(getTotalInventory());
     document.querySelector('#btn-cooler span').textContent = totInv;
     
-    document.getElementById('pellets-display').textContent = state.rawPellets;
-    document.getElementById('sterile-display').textContent = state.sterileBlocks;
-    
     // Calendar Update
     let hStr = state.hour < 10 ? '0'+state.hour : state.hour;
     document.getElementById('clock-display').textContent = `${SEASONS[state.season]}, Day ${state.day} - ${hStr}:00`;
@@ -925,22 +1092,28 @@ function updateUI() {
         elTentsContainer.appendChild(div);
     });
     
-    // Update Incubation Shelf
-    const shelf = document.getElementById('incubation-container');
-    if (shelf) {
-        shelf.innerHTML = '';
+    // Update Substrate Dashboard
+    const dash = document.getElementById('substrate-dashboard');
+    if (dash) {
+        let h = '';
+        let rawBlocksCount = Math.floor(state.rawPellets / 10);
+        for(let i=0; i<rawBlocksCount; i++) {
+            h += `<div class="substrate-block raw" title="Raw Pellets (10lbs)"></div>`;
+        }
+        for(let i=0; i<state.sterileBlocks; i++) {
+            h += `<div class="substrate-block sterile" title="Sterile Block"></div>`;
+        }
         state.incubationBatches.forEach(b => {
-            const bd = document.createElement('div');
-            bd.className = 'grain-bag' + (b.isContaminated ? ' contaminated' : '');
-            bd.innerHTML = `
-                <div class="grain-label">${b.species.substring(0,3).toUpperCase()}</div>
-                <div class="grain-mycelium" style="height:${b.colonization}%"></div>
-            `;
-            shelf.appendChild(bd);
+            let extraclass = b.isContaminated ? ' contaminated' : (b.colonization >= 100 ? ' ready' : '');
+            h += `<div class="substrate-block grain-bag${extraclass}" title="${b.species} - ${Math.floor(b.colonization)}%">
+                <div class="grain-mycelium" style="height:${b.colonization}%;"></div>
+            </div>`;
         });
+        dash.innerHTML = h;
     }
 
     document.getElementById('capacity-display').textContent = totCap;
+    document.getElementById('demand-display').textContent = getEffectiveDemand();
 }
 
 // Modal & Encyclopedia Logic
@@ -1012,7 +1185,9 @@ function updateSpeciesDropdown() {
 updateSpeciesDropdown();
 
 window.buyHW = function(tentId, hwType) {
-    const cost = state.costs[hwType];
+    const hwMap = { 'hum': 'humidifier', 'fan': 'fan', 'ac': 'ac' };
+    const costKey = hwMap[hwType];
+    const cost = state.costs[costKey];
     const tent = state.tents.find(t => t.id === tentId);
     if (!tent) return;
     if (state.money >= cost) {
@@ -1042,7 +1217,7 @@ function showAcquisitionModal(client) {
 document.getElementById('btn-sign-contract').addEventListener('click', () => {
     if (state.pendingClient) {
         state.pendingClient.acquired = true;
-        state.demand += state.pendingClient.boost;
+        state.demandBase += state.pendingClient.boost;
         if(state.pendingClient.boost >= 3) {
             state.reputation++;
             logMsg("1-Star Reputation Boost from signing a massive client!", "success");
@@ -1170,6 +1345,28 @@ function initGame() {
     ctx.font = "16px monospace";
     ctx.fillText("Awaiting Initialization...", 90, 200);
     logMsg("Phase 6: 3/4 Perspective Engine Ready.", "info");
+
+    // Show "Continue" button if a save exists
+    if (hasSaveData()) {
+        document.getElementById('btn-continue').style.display = 'block';
+    }
+    document.getElementById('btn-continue').addEventListener('click', () => {
+        document.getElementById('modal-splash').style.display = 'none';
+        gameStarted = true;
+        lastTime = performance.now();
+        if (loadGame()) {
+            const regionNames = { 'pnw': "Pacific Northwest", 'desert': "Desert Southwest", 'northeast': "Northeast" };
+            document.getElementById('region-display').textContent = regionNames[state.region] || 'Unknown';
+        }
+        if (bgm && !bgmPlaying) {
+            bgm.src = bgmQueue[0];
+            bgm.load();
+            bgm.play().catch(e => console.log(e));
+            bgmPlaying = true;
+            document.getElementById('btn-music').textContent = '🔊 Music';
+        }
+        requestAnimationFrame(gameLoop);
+    });
 }
 
 document.getElementById('btn-start-simulation').addEventListener('click', () => {
@@ -1186,6 +1383,8 @@ document.getElementById('btn-start-simulation').addEventListener('click', () => 
     
     // Play audio when user physically interacts with the "Initialize" button
     if(bgm && !bgmPlaying) {
+        bgm.src = bgmQueue[0];
+        bgm.load();
         bgm.play().catch(e=>console.log(e));
         bgmPlaying = true;
         document.getElementById('btn-music').textContent = '🔊 Music';
@@ -1214,7 +1413,7 @@ if (loadedCount === imgVals.length) initGame();
 
 let bgmPlaying = false;
 const bgm = document.getElementById('bgm');
-const bgmQueue = ['bgm1.mp3', 'bgm2.mp3', 'bgm3.mp3'];
+const bgmQueue = ['bgm.mp3', 'bgm2.mp3', 'bgm3.mp3'];
 let currentBgmIndex = 0;
 
 if(bgm) {
@@ -1222,9 +1421,24 @@ if(bgm) {
     bgm.addEventListener('ended', () => {
         currentBgmIndex = (currentBgmIndex + 1) % bgmQueue.length;
         bgm.src = bgmQueue[currentBgmIndex];
+        bgm.load();
         bgm.play().catch(e=>console.log(e));
     });
 }
+document.getElementById('btn-save').addEventListener('click', saveGame);
+document.getElementById('btn-load').addEventListener('click', () => {
+    if (loadGame()) logMsg('Game loaded!', 'success');
+});
+
+document.getElementById('btn-restart').addEventListener('click', () => {
+    localStorage.removeItem(SAVE_KEY);
+    location.reload();
+});
+
+document.getElementById('btn-continue-playing').addEventListener('click', () => {
+    document.getElementById('modal-win').style.display = 'none';
+});
+
 document.getElementById('btn-music').addEventListener('click', () => {
     if(!bgm) return;
     if(bgmPlaying) {
@@ -1232,6 +1446,10 @@ document.getElementById('btn-music').addEventListener('click', () => {
         bgmPlaying = false;
         document.getElementById('btn-music').textContent = '🔇 Music';
     } else {
+        if (!bgm.currentSrc) {
+            bgm.src = bgmQueue[currentBgmIndex];
+            bgm.load();
+        }
         bgm.play().catch(e=>console.log(e));
         bgmPlaying = true;
         document.getElementById('btn-music').textContent = '🔊 Music';
