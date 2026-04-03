@@ -7,22 +7,53 @@ function logMsg(msg, type) {
     if (elLog.children.length > 5) elLog.removeChild(elLog.lastChild);
 }
 
+// ── Calendar helpers ──────────────────────────────────────────────────────────
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_TO_SEASON = [3,3,0,0,0,1,1,1,2,2,2,3]; // Dec-Feb=Winter, Mar-May=Spring, etc.
+
+function getGameDate() {
+    if (!state.calendarStart) return null;
+    const d = new Date(state.calendarStart);
+    d.setDate(d.getDate() + state.totalDays);
+    d.setHours(state.hour, 0, 0, 0);
+    return d;
+}
+
+function getGameDateStr() {
+    const d = getGameDate();
+    if (!d) return `Day ${state.totalDays} - ${state.hour < 10 ? '0' + state.hour : state.hour}:00`;
+    const dow = DAY_NAMES[d.getDay()];
+    const mon = MONTH_NAMES[d.getMonth()];
+    const day = d.getDate();
+    const yr = d.getFullYear();
+    const hStr = state.hour < 10 ? '0' + state.hour : state.hour;
+    return `${dow}, ${mon} ${day} ${yr} - ${hStr}:00`;
+}
+
+function getSeasonFromDate() {
+    const d = getGameDate();
+    if (!d) return state.season;
+    return MONTH_TO_SEASON[d.getMonth()];
+}
+
+function getDayOfWeek() {
+    const d = getGameDate();
+    if (!d) return 0;
+    return d.getDay(); // 0=Sun, 6=Sat
+}
+
 // ── Demand helpers ────────────────────────────────────────────────────────────
 function getEffectiveDemand() {
-    return Math.max(1, Math.round(state.demandBase * state.demandModifier * state.demandSeasonalMod));
+    let d = 0;
+    if (getDayOfWeek() === 6) d += (state.holidaySurge ? 200 : 20); // Saturday market
+    state.clientRoster.forEach(c => {
+        if (c.acquired && c.daysSinceFulfillment >= c.contractDays) d += c.contractLbs;
+    });
+    return d;
 }
 
 function updateDemandDrift() {
-    const seasonalFactors = [1.0, 1.2, 1.3, 0.8]; // Spring / Summer / Fall / Winter
-    state.demandSeasonalMod = seasonalFactors[state.season];
-    const effective = getEffectiveDemand();
-    if (state.dailySalesVolume <= 0) {
-        state.demandModifier = Math.min(1.5, state.demandModifier + 0.05);
-    } else if (state.dailySalesVolume >= effective) {
-        state.demandModifier = Math.max(0.5, state.demandModifier - 0.03);
-    } else {
-        state.demandModifier += (1.0 - state.demandModifier) * 0.1;
-    }
     state.dailySalesVolume = 0;
 }
 
@@ -46,11 +77,11 @@ function updateTentMicroclimates(dt) {
         const sd = state.speciesData[tent.species];
         let targetTemp = state.ambientTemp;
         if (sd) {
-            if (tent.hw.ac && state.ambientTemp > sd.tMax) targetTemp = sd.tMax;
-            if (tent.hw.heat && state.ambientTemp < sd.tMin) targetTemp = sd.tMin;
+            if (state.garageAC && state.ambientTemp > sd.tMax) targetTemp = sd.tMax;
+            if (state.garageHeater && state.ambientTemp < sd.tMin) targetTemp = sd.tMin;
         } else {
-            if (tent.hw.ac) targetTemp = Math.min(targetTemp, 68);
-            if (tent.hw.heat) targetTemp = Math.max(targetTemp, 72);
+            if (state.garageAC) targetTemp = Math.min(targetTemp, 68);
+            if (state.garageHeater) targetTemp = Math.max(targetTemp, 72);
         }
         tent.temp += (targetTemp - tent.temp) * Math.min(dt * 0.5, 1);
         
@@ -89,6 +120,13 @@ function loadGame() {
         if (saveData.version !== 1) { logMsg('Save version mismatch.', 'error'); return false; }
         Object.assign(state, saveData.state);
         if (state.demandBase === undefined) state.demandBase = state.demand || 10;
+        if (typeof state.totalDays !== 'number') state.totalDays = (state.day || 1) + ((state.season || 0) * 30);
+        if (!state.calendarStart) {
+            const now = new Date();
+            now.setDate(now.getDate() - state.totalDays);
+            state.calendarStart = now.getTime();
+        }
+        state.season = getSeasonFromDate();
         if (state.pendingClient) {
             state.pendingClient = state.clientRoster.find(c => c.id === state.pendingClient.id) || null;
         }
@@ -98,6 +136,7 @@ function loadGame() {
         salesperson.x = 80; salesperson.y = 300;
         salesperson.state = 'idle'; salesperson.timer = 10;
         updateSpeciesDropdown();
+        if (typeof generateOperatorSprite === 'function') keyedImgs.op = generateOperatorSprite();
         updateUI();
         return true;
     } catch(e) {
@@ -157,7 +196,7 @@ function checkWinLoseConditions() {
 function showBankruptcyScreen() {
     const el = document.getElementById('modal-bankrupt');
     document.getElementById('bankrupt-stats').innerHTML =
-        `Days survived: ${state.day + (state.season * 30)}<br>` +
+        `Days in operation: ${state.totalDays}<br>` +
         `Peak reputation: ${'★'.repeat(state.reputation)}<br>` +
         `Clients secured: ${state.clientRoster.filter(c => c.acquired).length}`;
     el.style.display = 'flex';
@@ -184,6 +223,15 @@ function gameLoop(currentTime) {
     }
 
     // Note: Sleep fast-forward is now handled instantly via UI blocking iteration.
+    
+    if (typeof isPaused !== 'undefined' && isPaused) {
+        renderCanvas();
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+
+    // Game Speed Multiplier
+    dt *= (state.speedMultiplier || 1);
 
     updateTime(dt);
     updatePhysics(dt);
@@ -200,36 +248,108 @@ function gameLoop(currentTime) {
 
 // ── Time & Seasons ────────────────────────────────────────────────────────────
 function updateTime(dt) {
+    // Migrate legacy single sterilizer
+    if (!state.sterilizers || state.sterilizers.length === 0) {
+        state.sterilizers = [{ id: 1, level: state.sterilizerLevel || 1, busyTime: state.sterilizerBusyTime || 0, pendingBlocks: state.sterilizerPendingBlocks || 0 }];
+    }
+    // Tick all sterilizer units
+    state.sterilizers.forEach(s => {
+        if (s.busyTime > 0) {
+            s.busyTime -= dt;
+            if (s.busyTime <= 0) {
+                state.sterileBlocks += (s.pendingBlocks || 1);
+                logMsg(`Sterilizer #${s.id} done! +${s.pendingBlocks} Sterile Blocks.`, 'success');
+                s.busyTime = 0;
+                s.pendingBlocks = 0;
+                if (typeof updateUI === 'function') updateUI();
+            }
+        }
+    });
+
     state.timeTimer += dt;
     if (state.timeTimer >= 1.0) {
         state.timeTimer -= 1.0;
         state.hour++;
         if (state.hour >= 24) {
             state.hour = 0;
-            state.day++;
+            state.totalDays++;
+            state.laborHours = state.charTrait === 'workaholic' ? 18 : 16;
+
+            // Backfill calendarStart if missing (old save or first load)
+            if (!state.calendarStart) {
+                const now = new Date();
+                now.setDate(now.getDate() - state.totalDays);
+                state.calendarStart = now.getTime();
+            }
+
+            // Sync state.day with calendar day-of-month
+            const gd = getGameDate();
+            if (gd) state.day = gd.getDate();
+
+            // Derive season from calendar month
+            const prevSeason = state.season;
+            state.season = getSeasonFromDate();
+            if (state.season !== prevSeason) {
+                logMsg(`A new season has begun: ${SEASONS[state.season]}!`, 'success');
+            }
+
+            // Saturday market day popup
+            if (getDayOfWeek() === 6) {
+                if (Math.random() < 0.25) {
+                    state.holidaySurge = true;
+                    logMsg(`HOLIDAY SURGE! Farmers market buying absolutely everything today!`, 'info');
+                } else {
+                    state.holidaySurge = false;
+                }
+                if (typeof showMarketDayBanner === 'function') showMarketDayBanner();
+            } else {
+                state.holidaySurge = false;
+            }
 
             // Electricity bill at midnight
             let dailyWatts = 0;
             state.tents.forEach(t => {
                 if (t.hw) {
-                    if (t.hw.hum)  dailyWatts += 50;
-                    if (t.hw.fan)  dailyWatts += 20;
-                    if (t.hw.ac)   dailyWatts += 300;
-                    if (t.hw.heat) dailyWatts += 150;
+                    if (t.hw.hum) dailyWatts += 50;
+                    if (t.hw.fan) dailyWatts += 20;
                 }
             });
-            let energyCost = dailyWatts * 0.05;
+            if (state.garageAC)     dailyWatts += 300;
+            if (state.garageHeater) dailyWatts += 150;
+            let energyCost = dailyWatts * 0.01;
             if (state.hasCO2) energyCost *= 0.8;
             if (energyCost > 0) {
                 state.money -= energyCost;
                 logMsg(`Paid Daily Electricity Bill: -$${energyCost.toFixed(2)}`, 'error');
             }
 
-            if (state.day > 30) {
-                state.day = 1;
-                state.season = (state.season + 1) % 4;
-                logMsg(`A new season has begun: ${SEASONS[state.season]}!`, 'success');
+            if (state.hasSalesperson) {
+                state.money -= 100;
+                logMsg(`Paid Daily Salesperson Salary: -$100.00`, 'error');
             }
+
+            // Client Contracts Satisfaction tracking
+            state.clientRoster.forEach(c => {
+                if (c.acquired) {
+                    if (typeof c.daysSinceFulfillment !== 'number') c.daysSinceFulfillment = 0;
+                    c.daysSinceFulfillment++;
+                    if (c.daysSinceFulfillment > c.contractDays) {
+                        const penalty = c.strictness * 10;
+                        c.satisfaction -= penalty;
+                        logMsg(`Missed contract delivery for ${c.name}! Satisfaction dropped to ${Math.floor(c.satisfaction)}%.`, 'error');
+                        if (c.satisfaction < 50) {
+                            c.acquired = false;
+                            c.satisfaction = 100;
+                            c.daysSinceFulfillment = 0;
+                            state.reputation = Math.max(1, state.reputation - 1);
+                            logMsg(`${c.name} CANCELED the contract for poor performance! Reputation lost!`, 'error');
+                        }
+                    } else if (c.daysSinceFulfillment <= c.contractDays && c.satisfaction < 100) {
+                        c.satisfaction = Math.min(100, c.satisfaction + 1);
+                    }
+                }
+            });
+
             updateDemandDrift();
             checkWinLoseConditions();
             saveGame();
@@ -303,9 +423,14 @@ function updatePhysics(dt) {
         }
         else if (t === 'sterilize') {
             state.rawPellets -= operator.actionQueue.required;
-            const blocksProduced = state.sterilizerLevel === 1 ? 1 : state.sterilizerLevel === 2 ? 4 : 16;
-            state.sterileBlocks += blocksProduced;
-            logMsg(`Sterilized ${blocksProduced} substrate block(s)!`, 'success');
+            const unit = state.sterilizers.find(s => s.id === operator.actionQueue.unitId);
+            if (unit) {
+                const times = {1: 12, 2: 12, 3: 12, 4: 6, 5: 8};
+                const cycleTime = times[unit.level] || 12;
+                unit.busyTime = cycleTime;
+                unit.pendingBlocks = operator.actionQueue.blockCap || 1;
+                logMsg(`Sterilizer #${unit.id} loaded with ${unit.pendingBlocks} blocks. Done in ${cycleTime}h.`, 'info');
+            }
         }
         else if (t === 'spawnBulk') {
             const bagIndex = state.incubationBatches.findIndex(b => b.id === operator.actionQueue.bagId);
@@ -317,10 +442,13 @@ function updatePhysics(dt) {
                 if (state.sterileBlocks < 0) state.sterileBlocks = 0;
                 
                 if (!state.blockBatches) state.blockBatches = [];
+                const contamRisks = {1: 0.15, 2: 0.10, 3: 0.05, 4: 0.02, 5: 0.0};
+                const bestLevel = state.sterilizers ? Math.max(...state.sterilizers.map(s => s.level)) : (state.sterilizerLevel || 1);
+                const risk = contamRisks[bestLevel] || 0.15;
                 state.blockBatches.push({
                     id: state.bagIdCounter++, species: bag.species,
                     size: consumed,
-                    colonization: 0, isContaminated: false
+                    colonization: 0, isContaminated: false, doomed: Math.random() < risk
                 });
                 logMsg(`Inoculated ${consumed} blocks of ${bag.species}. Colonizing on shelf...`, 'info');
             }
@@ -372,11 +500,12 @@ function updatePhysics(dt) {
         }
         else if (t === 'harvest') {
             const targetTent = operator.actionQueue.targetTent;
-            const harvestedBase = Math.floor(targetTent.currentCrop);
-            const harvested = Math.floor(harvestedBase * state.speciesData[targetTent.species].yieldMod);
-            const dateStr = `${SEASONS[state.season]}, Day ${state.day}`;
+            const harvested = parseFloat(targetTent.currentCrop.toFixed(1));
+            const gd = getGameDate();
+            const dateStr = gd ? `${MONTH_NAMES[gd.getMonth()]} ${gd.getDate()}` : `Day ${state.totalDays}`;
+            const spoil = state.speciesData[targetTent.species].spoilTime || SPOIL_TIME;
             state.inventoryBatches.push({
-                amount: harvested, timer: SPOIL_TIME, maxTimer: SPOIL_TIME,
+                amount: harvested, timer: spoil, maxTimer: spoil,
                 species: targetTent.species, harvestDate: dateStr
             });
             targetTent.currentCrop = 0;
@@ -390,22 +519,29 @@ function updatePhysics(dt) {
             }
             if (typeof renderCooler === 'function') renderCooler();
         }
-        else if (t === 'sell') { executeSale(); }
+        else if (t === 'sell') { executeMarketShipment(operator.actionQueue.shipment || {}); }
+        else if (t === 'deliver') { executeInvoiceDelivery(operator.actionQueue.clientId, operator.actionQueue.shipment || {}); }
         else if (t === 'pitch') {
             if (deductInventory(state.costs.pitchInv)) {
                 state.money -= state.costs.pitchCash;
                 // First pitch always succeeds; subsequent pitches 50% + golden mod
                 const isFirstPitch = state.pitchCount === 0;
                 let successChance = isFirstPitch ? 1.0 : 0.5;
+                if (state.charTrait === 'talker') successChance += 0.15;
                 if (!isFirstPitch && state.speciesData.golden.isResearched) successChance += state.speciesData.golden.pitchMod;
                 state.pitchCount++;
                 if (Math.random() < successChance) {
-                    const unacquired = state.clientRoster.filter(c => !c.acquired);
-                    if (unacquired.length > 0) {
-                        const randomClient = unacquired[Math.floor(Math.random() * unacquired.length)];
-                        state.pendingClient = randomClient;
-                        showAcquisitionModal(randomClient);
-                        logMsg(`Pitch successful! Meeting secured with ${randomClient.name}.`, 'success');
+                    let chosenClient = operator.actionQueue.targetClient;
+                    if (!chosenClient) {
+                        const unacquired = state.clientRoster.filter(c => !c.acquired && c.requiredReputation <= state.reputation);
+                        if (unacquired.length > 0) {
+                            chosenClient = unacquired[Math.floor(Math.random() * unacquired.length)];
+                        }
+                    }
+                    if (chosenClient) {
+                        state.pendingClient = chosenClient;
+                        showAcquisitionModal(chosenClient);
+                        logMsg(`Pitch successful! Meeting secured with ${chosenClient.name}.`, 'success');
                     } else {
                         state.demandBase += 10;
                         logMsg('Pitch SUCCESS! +10 lbs Market Demand! (All markets acquired)', 'success');
@@ -422,12 +558,12 @@ function updatePhysics(dt) {
             }
         }
         else if (t === 'extract') {
-            if (state.powder >= 2) {
-                state.powder -= 2;
+            if (state.powder >= 1) {
+                state.powder -= 1;
                 state.tinctures += 1;
-                logMsg('Produced 1 Tincture Bottle from 2 lbs Powder!', 'success');
+                logMsg('Produced 1 Tincture Bottle from 1 lb Powder!', 'success');
             } else {
-                logMsg('Need 2 lbs Mushroom Powder to make a tincture!', 'error');
+                logMsg('Need 1 lb Mushroom Powder to make a tincture!', 'error');
             }
         }
         operator.actionQueue = null;
@@ -436,51 +572,96 @@ function updatePhysics(dt) {
 }
 
 // ── Sales ─────────────────────────────────────────────────────────────────────
-function executeSale() {
-    const inv = getTotalInventory();
-    if (inv <= 0) { logMsg('No inventory to sell.', 'error'); return; }
-    const effective = getEffectiveDemand();
-    let toSell = Math.min(inv, effective);
-    if (toSell <= 0) { logMsg('Market demand is full!', 'error'); return; }
+// shipment = { species: amount, ... }  e.g. { blue: 10, shiitake: 5 }
+function executeInvoiceDelivery(clientId, shipment) {
+    const client = state.clientRoster.find(c => c.id === clientId);
+    if (!client || !client.acquired) { logMsg('Invalid client.', 'error'); return; }
 
     let earnings = 0;
-    let amountSold = 0;
-    while (toSell > 0 && state.inventoryBatches.length > 0) {
-        const b = state.inventoryBatches[0];
-        const repBonus = (state.reputation - 1) * 2;
-        const valPerLb = state.speciesData[b.species].val + repBonus;
-        if (b.amount <= toSell) {
-            earnings += b.amount * valPerLb;
-            amountSold += b.amount;
-            toSell -= b.amount;
-            state.inventoryBatches.shift();
-        } else {
-            earnings += toSell * valPerLb;
-            b.amount -= toSell;
-            amountSold += toSell;
-            toSell = 0;
+    let totalSold = 0;
+
+    Object.keys(shipment).forEach(species => {
+        let qty = shipment[species];
+        if (qty <= 0) return;
+        // Deduct from cooler batches of this species
+        for (let i = 0; i < state.inventoryBatches.length; i++) {
+            const b = state.inventoryBatches[i];
+            if (qty <= 0) break;
+            if (b.species !== species || b.amount <= 0) continue;
+            const take = Math.min(b.amount, qty);
+            b.amount -= take;
+            qty -= take;
+            const valPerLb = state.speciesData[species].val + ((state.reputation - 1) * 2);
+            earnings += take * valPerLb;
+            totalSold += take;
         }
+    });
+
+    state.inventoryBatches = state.inventoryBatches.filter(b => b.amount > 0);
+
+    if (totalSold >= client.contractLbs) {
+        client.daysSinceFulfillment = 0;
+        client.satisfaction = Math.min(100, client.satisfaction + Math.floor(client.strictness * 5));
+        logMsg(`Contract FULFILLED for ${client.name}! ${Math.floor(totalSold)} lbs delivered for $${Math.floor(earnings)}.`, 'success');
+    } else if (totalSold > 0) {
+        logMsg(`Partial delivery to ${client.name}: ${Math.floor(totalSold)}/${client.contractLbs} lbs. $${Math.floor(earnings)} earned.`, 'info');
     }
-    state.money += earnings;
-    state.dailySalesVolume += amountSold;
-    logMsg(`Sold ${amountSold} lbs to Market for $${earnings}!`, 'success');
+
+    if (totalSold > 0) state.money += earnings;
+    if (typeof renderCooler === 'function') renderCooler();
+    return { totalSold, earnings };
 }
 
+// shipment = { species: amount } for market selling
+function executeMarketShipment(shipment) {
+    let earnings = 0;
+    let totalSold = 0;
+
+    Object.keys(shipment).forEach(species => {
+        let qty = shipment[species];
+        if (qty <= 0) return;
+        for (let i = 0; i < state.inventoryBatches.length; i++) {
+            const b = state.inventoryBatches[i];
+            if (qty <= 0) break;
+            if (b.species !== species || b.amount <= 0) continue;
+            const take = Math.min(b.amount, qty);
+            b.amount -= take;
+            qty -= take;
+            earnings += take * state.speciesData[species].val;
+            totalSold += take;
+        }
+    });
+
+    state.inventoryBatches = state.inventoryBatches.filter(b => b.amount > 0);
+
+    if (totalSold > 0) {
+        state.money += earnings;
+        logMsg(`Farmers Market: sold ${Math.floor(totalSold)} lbs for $${Math.floor(earnings)}!`, 'success');
+    }
+    if (typeof renderCooler === 'function') renderCooler();
+    return { totalSold, earnings };
+}
+
+// executeMarketSale removed — now handled via executeMarketShipment with player-chosen quantities
+
 // ── Salesperson AI ────────────────────────────────────────────────────────────
+// Salesperson only goes to market on Saturdays. Prompts player for what to bring.
+let _salespersonMarketPrompted = false;
+
 function updateSalesperson(dt) {
     if (!state.hasSalesperson) return;
-    if (salesperson.state === 'idle') {
-        salesperson.timer -= dt;
-        if (salesperson.timer <= 0) {
-            const inv = getTotalInventory();
-            const isSaturday = (state.day % 7 === 6);
-            if (isSaturday && Math.min(inv, getEffectiveDemand()) > 0) {
-                salesperson.state = 'movingToShip';
-                salesperson.targetX = stations.shipping.x;
-                salesperson.targetY = stations.shipping.y + 20;
-            } else { salesperson.timer = 5; }
+
+    // On Saturday mornings, prompt the player once
+    if (getDayOfWeek() === 6 && state.hour >= 8 && !_salespersonMarketPrompted) {
+        _salespersonMarketPrompted = true;
+        if (getTotalInventory() > 0 && typeof showMarketSelectModal === 'function') {
+            showMarketSelectModal();
         }
-    } else if (salesperson.state === 'movingToShip' || salesperson.state === 'movingToStand') {
+    }
+    if (getDayOfWeek() !== 6) _salespersonMarketPrompted = false;
+
+    // Salesperson movement (only when given a shipment via the modal)
+    if (salesperson.state === 'movingToShip' || salesperson.state === 'movingToStand') {
         const dx = salesperson.targetX - salesperson.x;
         const dy = salesperson.targetY - salesperson.y;
         const dist = Math.sqrt(dx*dx + dy*dy);
@@ -491,8 +672,11 @@ function updateSalesperson(dt) {
                 salesperson.targetX = stations.stand.x + 20;
                 salesperson.targetY = stations.stand.y + 20;
             } else {
-                executeSale();
-                salesperson.state = 'idle'; salesperson.timer = 10;
+                if (salesperson.shipment) {
+                    executeMarketShipment(salesperson.shipment);
+                    salesperson.shipment = null;
+                }
+                salesperson.state = 'idle';
             }
         } else {
             salesperson.x += (dx / dist) * salesperson.speed * dt;
@@ -521,15 +705,19 @@ function updateGrowthAndSpoil(dt) {
         state.blockBatches.forEach(batch => {
             if (!batch.isContaminated && batch.colonization < 100) {
                 const sd = state.speciesData[batch.species];
-                batch.colonization += (sd ? sd.colRate : 0.298) * dt;
+                const tumblerScale = state.hasTumbler ? 1.25 : 1.0;
+                batch.colonization += (sd ? sd.colRate : 0.298) * tumblerScale * dt;
                 if (batch.colonization >= 100) {
                     batch.colonization = 100;
                     logMsg(`Substrate blocks of ${batch.species} fully colonized! Ready for a tent.`, 'success');
                 }
                 const riskPerSec = 0.0003; // Base risk on shelf
-                if (Math.random() < riskPerSec * dt) {
+                if (batch.doomed && batch.colonization > 30 && Math.random() < riskPerSec * 10 * dt) {
                     batch.isContaminated = true;
-                    logMsg(`Substrate blocks of ${batch.species} contaminated during colonization!`, 'error');
+                    logMsg(`Sterilization failure! Substrate blocks of ${batch.species} ruined.`, 'error');
+                } else if (Math.random() < riskPerSec * dt) {
+                    batch.isContaminated = true;
+                    logMsg(`Substrate blocks of ${batch.species} contaminated on the shelf!`, 'error');
                 }
             }
         });
@@ -537,10 +725,11 @@ function updateGrowthAndSpoil(dt) {
 
     // Tent fruiting growth + hardware contamination risk
     state.tents.forEach(tent => {
-        // dynamically recalculate capacity based on filled blocks and flush penalty
+        // dynamically recalculate capacity based on filled blocks and biological efficiency
         if (tent.blocksFilled > 0) {
-            const flushMult = tent.flushes === 0 ? 1 : (tent.flushes === 1 ? 0.5 : 0.25);
-            tent.capacity = (tent.blocksFilled * 10) * flushMult;
+            const yieldMod = state.speciesData[tent.species].yieldMod || 1.0;
+            const baseFlushYield = tent.flushes === 0 ? 2.0 : (tent.flushes === 1 ? 1.0 : 0.5);
+            tent.capacity = tent.blocksFilled * baseFlushYield * yieldMod;
         } else {
             tent.capacity = 0;
         }

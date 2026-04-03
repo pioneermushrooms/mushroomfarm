@@ -30,7 +30,7 @@ body {
     padding: 20px;
     margin-bottom: 20px;
     width: 100%;
-    max-width: 1100px;
+    max-width: 1250px;
     box-sizing: border-box;
 }
 
@@ -52,10 +52,10 @@ body {
 
 .game-container {
     display: grid;
-    grid-template-columns: 460px 1fr;
+    grid-template-columns: 130px 460px 1fr;
     gap: 20px;
     width: 100%;
-    max-width: 1100px;
+    max-width: 1250px;
 }
 
 .right-panels {
