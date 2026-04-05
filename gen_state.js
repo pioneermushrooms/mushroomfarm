@@ -4,21 +4,33 @@ let content = fs.readFileSync('state.js', 'utf8');
 const baseNames = ['Bistro', 'Cafe', 'Diner', 'Steakhouse', 'Pizzeria', 'Kitchen', 'Ramen House', 'Tavern', 'Apothecary', 'Eatery'];
 const prefixes = ['Golden', 'Iron', 'Bella', 'Local', 'Hipster', 'Jade', 'Sakura', 'Root & Branch', 'Fine', 'Rustic'];
 const species = ['any', 'blue', 'shiitake', 'lions', 'pioppino'];
-const images = ['pizza.png', 'steak.png', 'champignon.png'];
+const imageMap = {
+    'Bistro': 'client_bistro.png',
+    'Cafe': 'client_cafe.png',
+    'Diner': 'client_diner.png',
+    'Steakhouse': 'client_steakhouse.png',
+    'Pizzeria': 'client_pizzeria.png',
+    'Kitchen': 'client_kitchen.png',
+    'Ramen House': 'client_ramen.png',
+    'Tavern': 'client_tavern.png',
+    'Apothecary': 'client_apothecary.png',
+    'Eatery': 'client_eatery.png'
+};
 
 let clients = [];
 for (let i = 1; i <= 50; i++) {
     let repReq = Math.floor((i - 1) / 10) + 1; // 1-5
-    let bName = prefixes[Math.floor(Math.random()*prefixes.length)] + ' ' + baseNames[Math.floor(Math.random()*baseNames.length)] + ' ' + i;
+    let baseSelect = baseNames[Math.floor(Math.random()*baseNames.length)];
+    let bName = prefixes[Math.floor(Math.random()*prefixes.length)] + ' ' + baseSelect + ' ' + i;
     let lbs = 5 + Math.floor(Math.random() * 20) + (repReq * 10);
     let s = species[Math.floor(Math.random() * species.length)];
-    let img = images[Math.floor(Math.random() * images.length)];
+    let img = imageMap[baseSelect];
     
     // Hardcode some flavors
-    if(i===1) { bName='Luigies Pizzeria'; img='pizza.png'; s='any'; lbs=10; }
-    if(i===2) { bName='Iron Steakhouse'; img='steak.png'; s='blue'; lbs=20; }
-    if(i===3) { bName='Bella Pasta'; img='champignon.png'; s='shiitake'; lbs=15; }
-    if(i===9) { bName='Le Champignon Fin'; img='champignon.png'; s='pioppino'; lbs=5; repReq=1; }
+    if(i===1) { bName='Luigies Pizzeria'; img='client_pizzeria.png'; s='any'; lbs=10; }
+    if(i===2) { bName='Iron Steakhouse'; img='client_steakhouse.png'; s='blue'; lbs=20; }
+    if(i===3) { bName='Bella Pasta'; img='client_bistro.png'; s='shiitake'; lbs=15; }
+    if(i===9) { bName='Le Champignon Fin'; img='client_kitchen.png'; s='pioppino'; lbs=5; repReq=1; }
 
     clients.push({
         id: 'c_' + i,

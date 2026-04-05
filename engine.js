@@ -4,7 +4,32 @@ function logMsg(msg, type) {
     p.textContent = `> ${msg}`;
     p.className = type;
     elLog.prepend(p);
-    if (elLog.children.length > 5) elLog.removeChild(elLog.lastChild);
+    if (elLog.children.length > 50) elLog.removeChild(elLog.lastChild);
+}
+
+// ── XP & Leveling ────────────────────────────────────────────────────────────
+function grantXP(amount, reason) {
+    if (!amount || amount <= 0) return;
+    // Workaholic trait: +10% XP
+    if (state.charTrait === 'workaholic') amount = Math.floor(amount * 1.1);
+    // Mycology Pioneer: +30% XP
+    if (hasSkill('res_mycology_pioneer')) amount = Math.floor(amount * 1.3);
+    state.xp += amount;
+    logMsg(`+${amount} XP (${reason})`, 'info');
+
+    // Check for level-up(s)
+    while (state.level < MAX_LEVEL && state.xp >= xpForLevel(state.level + 1)) {
+        state.level++;
+        const isMilestone = (state.level === 5 || state.level === 10 || state.level === 15);
+        const sp = isMilestone ? 2 : 1;
+        state.skillPoints += sp;
+        logMsg(`LEVEL UP! Now Level ${state.level}! +${sp} Skill Point(s)!`, 'success');
+        if (typeof showLevelUpBanner === 'function') showLevelUpBanner(state.level, sp);
+    }
+}
+
+function hasSkill(skillId) {
+    return Array.isArray(state.unlockedSkills) && state.unlockedSkills.includes(skillId);
 }
 
 // ── Calendar helpers ──────────────────────────────────────────────────────────
@@ -61,7 +86,8 @@ function updateDemandDrift() {
 function getTentGrowthMod(tent) {
     const sd = state.speciesData[tent.species];
     if (!sd) return 1.0;
-    const tempOk  = tent.temp >= sd.tMin && tent.temp <= sd.tMax;
+    const tempWiden = hasSkill('cult_genetic_mod_temp') ? 5 : 0;
+    const tempOk  = tent.temp >= (sd.tMin - tempWiden) && tent.temp <= (sd.tMax + tempWiden);
     const humRatio = Math.min(tent.humidity / sd.hMin, 1.0);
     const tempMod  = tempOk ? 1.0 : 0.2;
     
@@ -74,25 +100,34 @@ function getTentGrowthMod(tent) {
 
 function updateTentMicroclimates(dt) {
     state.tents.forEach(tent => {
+        if (typeof tent.humidity !== 'number') tent.humidity = 40;
+        if (typeof tent.temp !== 'number') tent.temp = 65;
+        if (typeof tent.co2 !== 'number') tent.co2 = 400;
+        if (!tent.hw) tent.hw = { hum: false, fan: false, ac: false, heat: false };
+        if (tent.hw.heat === undefined) tent.hw.heat = false;
         const sd = state.speciesData[tent.species];
+        const tw = hasSkill('cult_genetic_mod_temp') ? 5 : 0;
         let targetTemp = state.ambientTemp;
+        let hasClimate = false;
         if (sd) {
-            if (state.garageAC && state.ambientTemp > sd.tMax) targetTemp = sd.tMax;
-            if (state.garageHeater && state.ambientTemp < sd.tMin) targetTemp = sd.tMin;
+            if (state.garageAC && state.ambientTemp > sd.tMax + tw) { targetTemp = sd.tMax + tw; hasClimate = true; }
+            if (state.garageHeater && state.ambientTemp < sd.tMin - tw) { targetTemp = sd.tMin - tw; hasClimate = true; }
         } else {
-            if (state.garageAC) targetTemp = Math.min(targetTemp, 68);
-            if (state.garageHeater) targetTemp = Math.max(targetTemp, 72);
+            if (state.garageAC) { targetTemp = Math.min(targetTemp, 68); hasClimate = true; }
+            if (state.garageHeater) { targetTemp = Math.max(targetTemp, 72); hasClimate = true; }
         }
-        tent.temp += (targetTemp - tent.temp) * Math.min(dt * 0.5, 1);
+        // Garage climate control = instant; no climate = slow drift toward ambient
+        const tempRate = hasClimate ? 1.0 : Math.min(dt * 0.5, 1);
+        tent.temp += (targetTemp - tent.temp) * tempRate;
         
         let humTarget = 40;
         if (tent.hw.hum) humTarget = sd ? sd.hMin : 90;
         tent.humidity += (humTarget - tent.humidity) * Math.min(dt * 0.2, 1);
 
         if (tent.co2 === undefined) tent.co2 = 400;
-        if (tent.isGrowing && tent.currentCrop > 0) {
+        if (tent.isGrowing && tent.currentCrop > 0 && tent.capacity > 0) {
             const fillRatio = tent.currentCrop / tent.capacity;
-            tent.co2 += Math.pow(fillRatio, 2) * 500 * dt; 
+            tent.co2 += Math.pow(fillRatio, 2) * 500 * dt;
         }
         if (tent.hw.fan) {
             tent.co2 -= (tent.co2 - 400) * Math.min(dt * 2.0, 1);
@@ -127,6 +162,36 @@ function loadGame() {
             state.calendarStart = now.getTime();
         }
         state.season = getSeasonFromDate();
+
+        // XP migration for old saves
+        if (typeof state.xp !== 'number') {
+            // Retroactive XP estimate
+            let retro = 0;
+            retro += (state.totalDays || 0) * 5;
+            retro += state.clientRoster.filter(c => c.acquired).length * 30;
+            retro += (state.milestonesAchieved || []).length * 75;
+            retro += Object.values(state.speciesData).filter(s => s.isResearched).length * 20;
+            state.xp = retro;
+            state.level = 1;
+            while (state.level < MAX_LEVEL && state.xp >= xpForLevel(state.level + 1)) state.level++;
+            state.skillPoints = 0;
+            for (let i = 2; i <= state.level; i++) {
+                state.skillPoints += (i === 5 || i === 10 || i === 15) ? 2 : 1;
+            }
+            logMsg(`Save migrated! Retroactive XP: ${state.xp} (Level ${state.level}, ${state.skillPoints} SP)`, 'success');
+        }
+        if (typeof state.level !== 'number') state.level = 1;
+        if (typeof state.skillPoints !== 'number') state.skillPoints = 0;
+        if (!Array.isArray(state.unlockedSkills)) state.unlockedSkills = [];
+        if (typeof state.researchPoints !== 'number') state.researchPoints = 0;
+        if (!Array.isArray(state.speciesFirstHarvest)) state.speciesFirstHarvest = [];
+        if (!Array.isArray(state.liquidCultures)) state.liquidCultures = [];
+        if (typeof state.growKits !== 'number') state.growKits = 0;
+        if (!Array.isArray(state.activeBreakdowns)) state.activeBreakdowns = [];
+        if (typeof state.lastBreakdownDay !== 'number') state.lastBreakdownDay = 0;
+        if (!Array.isArray(state.wholesaleOrders)) state.wholesaleOrders = [];
+        if (!Array.isArray(state.restaurantEvents)) state.restaurantEvents = [];
+
         if (state.pendingClient) {
             state.pendingClient = state.clientRoster.find(c => c.id === state.pendingClient.id) || null;
         }
@@ -166,6 +231,7 @@ function checkMilestones() {
             if (m.action) m.action();
             logMsg(`MILESTONE: "${m.label}" — ${m.reward}`, 'success');
             showMilestoneBanner(m.label, m.reward);
+            grantXP(XP_REWARDS.completeMilestone, 'Milestone: ' + m.label);
         }
     });
 }
@@ -350,6 +416,101 @@ function updateTime(dt) {
                 }
             });
 
+            // Skill: Block production machine (auto-produce 8 blocks/day for $5)
+            if (hasSkill('prod_block_machine') && state.money >= 5) {
+                state.money -= 5;
+                state.sterileBlocks += 8;
+                logMsg('Block Machine produced 8 sterile blocks (-$5).', 'info');
+            }
+
+            // Skill: Grain Producer License (passive income $50-200/week on Mondays)
+            if (hasSkill('prod_grain_producer') && getDayOfWeek() === 1) {
+                const income = 50 + Math.floor(Math.random() * 150) + (state.reputation - 1) * 20;
+                state.money += income;
+                logMsg(`Grain Producer income: +$${income} (weekly wholesale).`, 'success');
+            }
+
+            // Skill: Speaking Events (30% chance on Wednesdays)
+            if (hasSkill('res_speaking_events') && getDayOfWeek() === 3 && Math.random() < 0.30) {
+                const xpReward = 50 + Math.floor(Math.random() * 50);
+                let rpReward = 10 + Math.floor(Math.random() * 10);
+                if (hasSkill('res_lab_equipment_2')) rpReward *= 2;
+                grantXP(xpReward, 'Speaking Event');
+                state.researchPoints += rpReward;
+                logMsg(`Speaking engagement! Earned +${rpReward} Research Points.`, 'success');
+                if (Math.random() < 0.25) {
+                    state.reputation = Math.min(5, state.reputation + 1);
+                    logMsg('Your talk impressed the crowd! +1 Reputation!', 'success');
+                }
+            }
+
+            // Skill: Restaurant Events (2% chance per acquired client per day)
+            if (hasSkill('comm_restaurant_events')) {
+                state.clientRoster.forEach(c => {
+                    if (c.acquired && Math.random() < 0.02) {
+                        const extraLbs = 10 + Math.floor(Math.random() * 10);
+                        if (!state.restaurantEvents) state.restaurantEvents = [];
+                        state.restaurantEvents.push({
+                            clientId: c.id, clientName: c.name, lbs: extraLbs,
+                            deadline: state.totalDays + 3, payMultiplier: 1.5,
+                            species: c.preferredSpecies
+                        });
+                        logMsg(`EVENT: ${c.name} needs ${extraLbs} extra lbs in 3 days! 1.5x pay!`, 'info');
+                    }
+                });
+            }
+
+            // Expire old restaurant events
+            if (state.restaurantEvents) {
+                const before = state.restaurantEvents.length;
+                state.restaurantEvents = state.restaurantEvents.filter(e => state.totalDays <= e.deadline + 1);
+                if (state.restaurantEvents.length < before) logMsg('An expired VIP event was removed.', 'info');
+            }
+
+            // Wholesale orders (weekly on Fridays, requires skill)
+            if (hasSkill('comm_wholesale') && getDayOfWeek() === 5) {
+                if (!state.wholesaleOrders) state.wholesaleOrders = [];
+                // Expire old unaccepted orders
+                state.wholesaleOrders = state.wholesaleOrders.filter(o => o.accepted || state.totalDays <= o.deadlineDay);
+                // Generate 1-2 new orders
+                const researched = Object.keys(state.speciesData).filter(k => state.speciesData[k].isResearched && !state.speciesData[k].exotic);
+                const numOrders = 1 + Math.floor(Math.random() * 2);
+                for (let i = 0; i < numOrders; i++) {
+                    const sp = researched[Math.floor(Math.random() * researched.length)] || 'blue';
+                    const lbs = 200 + Math.floor(Math.random() * 300); // 200-500 lbs
+                    const baseVal = state.speciesData[sp].val;
+                    const pricePerLb = Math.floor(baseVal * 0.6); // 60% of retail — bulk discount
+                    state.wholesaleOrders.push({
+                        id: state.bagIdCounter++, species: sp, lbs, pricePerLb,
+                        deadlineDay: state.totalDays + 14, accepted: false
+                    });
+                    logMsg(`WHOLESALE: ${lbs} lbs ${sp} @ $${pricePerLb}/lb available! (14 day window)`, 'info');
+                }
+            }
+
+            // Equipment failure check (3% daily, 7-day cooldown)
+            if (state.totalDays - (state.lastBreakdownDay || 0) >= 7) {
+                if (Math.random() < 0.03) {
+                    triggerEquipmentFailure();
+                    state.lastBreakdownDay = state.totalDays;
+                }
+            }
+
+            // Expire power surge (24h effect)
+            if (state.activeBreakdowns) {
+                state.activeBreakdowns = state.activeBreakdowns.filter(bd => {
+                    if (bd.eventId === 'power_surge' && bd.expiresDay && state.totalDays >= bd.expiresDay) {
+                        logMsg('Power restored! All equipment back online.', 'success');
+                        return false;
+                    }
+                    if (bd.eventId === 'tent_tear' && bd.expiresDay && state.totalDays >= bd.expiresDay) {
+                        logMsg(`Tent #${bd.targetId} contamination risk returning to normal.`, 'info');
+                        return false;
+                    }
+                    return true;
+                });
+            }
+
             updateDemandDrift();
             checkWinLoseConditions();
             saveGame();
@@ -378,6 +539,11 @@ function updateGardeners(dt) {
         const taken = Math.min(5, state.mulchInventory);
         state.mulchInventory -= taken;
         logMsg(`Gardeners took ${taken} bags of Mulch.`, 'info');
+        if (hasSkill('res_gardener_network') && Math.random() < 0.30) {
+            state.reputation = Math.min(5, state.reputation + 1);
+            logMsg('Gardener community impressed! +1 Reputation!', 'success');
+            grantXP(XP_REWARDS.newRepStar, 'Gardener Network');
+        }
         state.gardenerTimer = 30 + (Math.random() * 30);
     }
 }
@@ -406,7 +572,10 @@ function updatePhysics(dt) {
 
     if (operator.actionQueue && operator.actionQueue.state === 'working') {
         operator.actionQueue.timer -= dt;
-        if (operator.actionQueue.timer <= 0) operator.actionQueue.state = 'arrived';
+        // Safety: if timer is NaN or stuck, force complete
+        if (isNaN(operator.actionQueue.timer) || operator.actionQueue.timer <= 0) {
+            operator.actionQueue.state = 'arrived';
+        }
     }
 
     if (operator.actionQueue && operator.actionQueue.state === 'arrived') {
@@ -426,7 +595,8 @@ function updatePhysics(dt) {
             const unit = state.sterilizers.find(s => s.id === operator.actionQueue.unitId);
             if (unit) {
                 const times = {1: 12, 2: 12, 3: 12, 4: 6, 5: 8};
-                const cycleTime = times[unit.level] || 12;
+                let cycleTime = times[unit.level] || 12;
+                if (hasSkill('prod_efficient_sterilize')) cycleTime = Math.max(1, cycleTime - 1);
                 unit.busyTime = cycleTime;
                 unit.pendingBlocks = operator.actionQueue.blockCap || 1;
                 logMsg(`Sterilizer #${unit.id} loaded with ${unit.pendingBlocks} blocks. Done in ${cycleTime}h.`, 'info');
@@ -476,10 +646,12 @@ function updatePhysics(dt) {
                 state.incubationBatches.splice(bagIndex, 1);
                 if (state.hasMulchBin) state.mulchInventory += 1;
                 logMsg('Dumped contaminated grain bag.', 'info');
+                grantXP(XP_REWARDS.surviveContam, 'Contam Handled');
             } else if (blockIndex > -1) {
                 state.blockBatches.splice(blockIndex, 1);
                 if (state.hasMulchBin) state.mulchInventory += 3;
                 logMsg('Dumped contaminated substrate blocks.', 'info');
+                grantXP(XP_REWARDS.surviveContam, 'Contam Handled');
             }
         }
         else if (t === 'clearSpent') {
@@ -503,7 +675,8 @@ function updatePhysics(dt) {
             const harvested = parseFloat(targetTent.currentCrop.toFixed(1));
             const gd = getGameDate();
             const dateStr = gd ? `${MONTH_NAMES[gd.getMonth()]} ${gd.getDate()}` : `Day ${state.totalDays}`;
-            const spoil = state.speciesData[targetTent.species].spoilTime || SPOIL_TIME;
+            let spoil = state.speciesData[targetTent.species].spoilTime || SPOIL_TIME;
+            spoil = Math.floor(spoil * (1.0 + (state.rpSpoilageBonus || 0) * 0.20));
             state.inventoryBatches.push({
                 amount: harvested, timer: spoil, maxTimer: spoil,
                 species: targetTent.species, harvestDate: dateStr
@@ -518,6 +691,14 @@ function updatePhysics(dt) {
                 logMsg(`Harvested ${harvested} lbs! (Flush ${targetTent.flushes}/3)`, 'success');
             }
             if (typeof renderCooler === 'function') renderCooler();
+            // XP: harvest
+            grantXP(XP_REWARDS.harvest + targetTent.flushes * XP_REWARDS.harvestFlushBonus, 'Harvest');
+            // First harvest of species bonus
+            if (!state.speciesFirstHarvest) state.speciesFirstHarvest = [];
+            if (!state.speciesFirstHarvest.includes(targetTent.species)) {
+                state.speciesFirstHarvest.push(targetTent.species);
+                grantXP(XP_REWARDS.firstSpeciesHarvest, 'First ' + targetTent.species + ' harvest!');
+            }
         }
         else if (t === 'sell') { executeMarketShipment(operator.actionQueue.shipment || {}); }
         else if (t === 'deliver') { executeInvoiceDelivery(operator.actionQueue.clientId, operator.actionQueue.shipment || {}); }
@@ -528,6 +709,7 @@ function updatePhysics(dt) {
                 const isFirstPitch = state.pitchCount === 0;
                 let successChance = isFirstPitch ? 1.0 : 0.5;
                 if (state.charTrait === 'talker') successChance += 0.15;
+                if (hasSkill('comm_marketing_savvy')) successChance += 0.10;
                 if (!isFirstPitch && state.speciesData.golden.isResearched) successChance += state.speciesData.golden.pitchMod;
                 state.pitchCount++;
                 if (Math.random() < successChance) {
@@ -546,8 +728,10 @@ function updatePhysics(dt) {
                         state.demandBase += 10;
                         logMsg('Pitch SUCCESS! +10 lbs Market Demand! (All markets acquired)', 'success');
                     }
+                    grantXP(XP_REWARDS.pitchSuccess, 'Successful Pitch');
                 } else {
                     logMsg('Pitch FAILED! Try again next time.', 'error');
+                    grantXP(XP_REWARDS.pitchFail, 'Pitch Attempt');
                 }
             }
         }
@@ -555,6 +739,7 @@ function updatePhysics(dt) {
             if (deductInventory(10)) {
                 state.powder += 1;
                 logMsg('Produced 1 lb Mushroom Powder (Never Spoils)!', 'success');
+                grantXP(5, 'Dehydration');
             }
         }
         else if (t === 'extract') {
@@ -562,13 +747,208 @@ function updatePhysics(dt) {
                 state.powder -= 1;
                 state.tinctures += 1;
                 logMsg('Produced 1 Tincture Bottle from 1 lb Powder!', 'success');
+                grantXP(10, 'Tincture Extraction');
             } else {
                 logMsg('Need 1 lb Mushroom Powder to make a tincture!', 'error');
+            }
+        }
+        else if (t === 'makeLC') {
+            const bagIdx = state.incubationBatches.findIndex(b => b.id === operator.actionQueue.bagId);
+            if (bagIdx > -1) {
+                const bag = state.incubationBatches[bagIdx];
+                state.incubationBatches.splice(bagIdx, 1);
+                if (!state.liquidCultures) state.liquidCultures = [];
+                state.liquidCultures.push({ id: state.bagIdCounter++, species: bag.species });
+                logMsg(`Created Liquid Culture (${bag.species})! Use it to inoculate 4 bags free.`, 'success');
+                grantXP(15, 'Liquid Culture');
+            }
+        }
+        else if (t === 'inoculateLC') {
+            const lcIdx = (state.liquidCultures || []).findIndex(l => l.id === operator.actionQueue.lcId);
+            if (lcIdx > -1) {
+                const lc = state.liquidCultures[lcIdx];
+                state.liquidCultures.splice(lcIdx, 1);
+                const contamBase = state.labLevel === 1 ? 0.25 : 0.05;
+                for (let i = 0; i < 4; i++) {
+                    state.incubationBatches.push({
+                        id: state.bagIdCounter++, species: lc.species,
+                        colonization: 0, isContaminated: false, doomed: Math.random() < contamBase
+                    });
+                }
+                logMsg(`LC used! Inoculated 4 ${lc.species} grain bags (free).`, 'success');
+                grantXP(20, 'LC Inoculation');
+            }
+        }
+        else if (t === 'researchBench') {
+            if (state.money >= 50 && deductInventory(5)) {
+                state.money -= 50;
+                let rp = 10;
+                if (hasSkill('res_lab_equipment_2')) rp *= 2;
+                state.researchPoints += rp;
+                logMsg(`Research complete! +${rp} Research Points (Total: ${state.researchPoints}).`, 'success');
+                grantXP(15, 'Research');
+            } else {
+                logMsg('Research failed — insufficient funds or mushrooms.', 'error');
+            }
+        }
+        else if (t === 'makeKit') {
+            const bIdx = (state.blockBatches || []).findIndex(b => b.id === operator.actionQueue.batchId);
+            if (bIdx > -1) {
+                state.blockBatches.splice(bIdx, 1);
+                state.growKits = (state.growKits || 0) + 1;
+                logMsg(`Produced 1 Grow Kit! (${state.growKits} in stock)`, 'success');
+                grantXP(20, 'Grow Kit');
             }
         }
         operator.actionQueue = null;
         endActionCutscene();
     }
+}
+
+// ── Garage Square Footage ────────────────────────────────────────────────────
+function getUsedSquareFeet() {
+    let used = 0;
+    state.tents.forEach(t => { used += EQUIPMENT_FOOTPRINTS['tent_' + t.type] || 16; });
+    if (state.sterilizers) state.sterilizers.forEach(s => { used += EQUIPMENT_FOOTPRINTS['sterilizer_' + s.level] || 4; });
+    if (state.hasDehydrator)  used += EQUIPMENT_FOOTPRINTS.dehydrator;
+    if (state.hasTinctureLab) used += EQUIPMENT_FOOTPRINTS.tinctureLab;
+    if (state.hasMulchBin)    used += EQUIPMENT_FOOTPRINTS.mulchBin;
+    if (state.labLevel >= 2)  used += EQUIPMENT_FOOTPRINTS.flowHood;
+    if (hasSkill('prod_block_machine')) used += EQUIPMENT_FOOTPRINTS.blockMachine;
+    if (hasSkill('res_lab_equipment_1')) used += EQUIPMENT_FOOTPRINTS.researchBench;
+    return used;
+}
+
+function getAvailableSquareFeet() {
+    return GARAGE_BASE_SQFT - getUsedSquareFeet();
+}
+
+// ── Equipment Failures ───────────────────────────────────────────────────────
+function triggerEquipmentFailure() {
+    if (!state.activeBreakdowns) state.activeBreakdowns = [];
+
+    // Build list of eligible failure events based on what's owned
+    const eligible = FAILURE_EVENTS.filter(fe => {
+        if (fe.target === 'tent_hw') return state.tents.some(t => t.hw[fe.hw]);
+        if (fe.target === 'garage_ac') return state.garageAC;
+        if (fe.target === 'garage_heat') return state.garageHeater;
+        if (fe.target === 'sterilizer') return state.sterilizers && state.sterilizers.length > 0;
+        if (fe.target === 'tent') return state.tents.length > 0;
+        if (fe.target === 'all') return true;
+        return false;
+    });
+
+    if (eligible.length === 0) return;
+
+    // Catastrophic events are rare (5% of all failures)
+    let pool = eligible.filter(e => e.severity !== 'catastrophic');
+    if (Math.random() < 0.05) pool = eligible.filter(e => e.severity === 'catastrophic');
+    if (pool.length === 0) pool = eligible;
+
+    const event = pool[Math.floor(Math.random() * pool.length)];
+
+    // Determine target and repair cost
+    let targetId = null;
+    let repairCost = 0;
+
+    if (event.target === 'tent_hw') {
+        const candidates = state.tents.filter(t => t.hw[event.hw]);
+        if (candidates.length === 0) return;
+        const tent = candidates[Math.floor(Math.random() * candidates.length)];
+        targetId = tent.id;
+        repairCost = Math.floor(state.costs[event.hw === 'hum' ? 'humidifier' : event.hw === 'heat' ? 'heater' : event.hw] * event.repairPct);
+        tent.hw[event.hw] = false; // disable the hardware
+    } else if (event.target === 'garage_ac') {
+        repairCost = Math.floor(state.costs.ac * event.repairPct);
+        state.garageAC = false;
+        targetId = 'garage_ac';
+    } else if (event.target === 'garage_heat') {
+        repairCost = Math.floor(state.costs.heater * event.repairPct);
+        state.garageHeater = false;
+        targetId = 'garage_heat';
+    } else if (event.target === 'sterilizer') {
+        const idle = state.sterilizers.filter(s => s.busyTime <= 0);
+        const pool2 = idle.length > 0 ? idle : state.sterilizers;
+        const unit = pool2[Math.floor(Math.random() * pool2.length)];
+        targetId = unit.id;
+        const tierData = equipmentData.find(e => e.id === 'sterilizer');
+        const tierCost = tierData ? (tierData.tiers.find(t => t.level === unit.level) || tierData.tiers[0]).cost : 100;
+        repairCost = Math.floor(tierCost * event.repairPct);
+        if (event.severity === 'catastrophic') {
+            state.sterilizers = state.sterilizers.filter(s => s.id !== unit.id);
+        } else {
+            unit.busyTime = 9999; // mark as broken (won't count down normally)
+            unit._broken = true;
+        }
+    } else if (event.target === 'tent') {
+        const tent = state.tents[Math.floor(Math.random() * state.tents.length)];
+        targetId = tent.id;
+        const tentInfo = { '4x4': 100, '4x8': 150, '8x8': 200 };
+        repairCost = Math.floor((tentInfo[tent.type] || 100) * event.repairPct);
+    } else if (event.target === 'all') {
+        repairCost = Math.floor(state.money * event.repairPct);
+        targetId = 'all';
+    }
+
+    // Handyperson discount
+    if (state.charTrait === 'handy') repairCost = Math.floor(repairCost * 0.85);
+    repairCost = Math.max(10, repairCost);
+
+    const breakdown = {
+        eventId: event.id, targetId, repairCost, severity: event.severity,
+        desc: event.desc, effect: event.effect
+    };
+
+    // Timed events
+    if (event.id === 'power_surge') breakdown.expiresDay = state.totalDays + 1;
+    if (event.id === 'tent_tear') breakdown.expiresDay = state.totalDays + 2;
+
+    state.activeBreakdowns.push(breakdown);
+    logMsg(`BREAKDOWN: ${event.desc}`, 'error');
+
+    // Show modal
+    if (typeof showBreakdownModal === 'function') showBreakdownModal(breakdown);
+}
+
+function isEquipmentBroken(type, id) {
+    if (!state.activeBreakdowns) return false;
+    // Check for power surge (disables everything electric)
+    if (state.activeBreakdowns.some(bd => bd.eventId === 'power_surge')) {
+        if (['garage_ac', 'garage_heat', 'tent_hw'].includes(type)) return true;
+    }
+    return state.activeBreakdowns.some(bd => bd.eventId !== 'power_surge' && bd.targetId === id);
+}
+
+function repairBreakdown(index) {
+    if (!state.activeBreakdowns || !state.activeBreakdowns[index]) return;
+    const bd = state.activeBreakdowns[index];
+    if (state.money < bd.repairCost) {
+        logMsg(`Need $${bd.repairCost} to repair!`, 'error');
+        return false;
+    }
+    state.money -= bd.repairCost;
+
+    // Restore equipment
+    if (bd.eventId === 'fan_fail' || bd.eventId === 'hum_leak') {
+        const tent = state.tents.find(t => t.id === bd.targetId);
+        const hwKey = FAILURE_EVENTS.find(f => f.id === bd.eventId).hw;
+        if (tent) tent.hw[hwKey] = true;
+    } else if (bd.eventId === 'ac_compressor') {
+        state.garageAC = true;
+    } else if (bd.eventId === 'heater_element') {
+        state.garageHeater = true;
+    } else if (bd.eventId === 'barrel_leak') {
+        const unit = state.sterilizers.find(s => s.id === bd.targetId);
+        if (unit) { unit.busyTime = 0; unit._broken = false; }
+    }
+    // cooker_blowout: already destroyed, nothing to restore
+    // tent_tear + power_surge: timed, but paying repairs clears early
+
+    state.activeBreakdowns.splice(index, 1);
+    logMsg(`Repaired! -$${bd.repairCost}`, 'success');
+    grantXP(XP_REWARDS.surviveContam, 'Repair');
+    if (typeof updateUI === 'function') updateUI();
+    return true;
 }
 
 // ── Sales ─────────────────────────────────────────────────────────────────────
@@ -591,7 +971,8 @@ function executeInvoiceDelivery(clientId, shipment) {
             const take = Math.min(b.amount, qty);
             b.amount -= take;
             qty -= take;
-            const valPerLb = state.speciesData[species].val + ((state.reputation - 1) * 2);
+            let valPerLb = state.speciesData[species].val + ((state.reputation - 1) * 2);
+            if (hasSkill('comm_premium_pricing')) valPerLb = Math.floor(valPerLb * 1.20);
             earnings += take * valPerLb;
             totalSold += take;
         }
@@ -603,6 +984,8 @@ function executeInvoiceDelivery(clientId, shipment) {
         client.daysSinceFulfillment = 0;
         client.satisfaction = Math.min(100, client.satisfaction + Math.floor(client.strictness * 5));
         logMsg(`Contract FULFILLED for ${client.name}! ${Math.floor(totalSold)} lbs delivered for $${Math.floor(earnings)}.`, 'success');
+        const xpAmt = client.satisfaction > 90 ? XP_REWARDS.fulfillContract + 10 : XP_REWARDS.fulfillContract;
+        grantXP(xpAmt, 'Contract: ' + client.name);
     } else if (totalSold > 0) {
         logMsg(`Partial delivery to ${client.name}: ${Math.floor(totalSold)}/${client.contractLbs} lbs. $${Math.floor(earnings)} earned.`, 'info');
     }
@@ -627,7 +1010,9 @@ function executeMarketShipment(shipment) {
             const take = Math.min(b.amount, qty);
             b.amount -= take;
             qty -= take;
-            earnings += take * state.speciesData[species].val;
+            let mktVal = state.speciesData[species].val;
+            if (hasSkill('comm_haggling')) mktVal += 2;
+            earnings += take * mktVal;
             totalSold += take;
         }
     });
@@ -637,6 +1022,7 @@ function executeMarketShipment(shipment) {
     if (totalSold > 0) {
         state.money += earnings;
         logMsg(`Farmers Market: sold ${Math.floor(totalSold)} lbs for $${Math.floor(earnings)}!`, 'success');
+        grantXP(Math.floor(totalSold / 10) * XP_REWARDS.sellMarket, 'Market Sales');
     }
     if (typeof renderCooler === 'function') renderCooler();
     return { totalSold, earnings };
@@ -651,14 +1037,19 @@ let _salespersonMarketPrompted = false;
 function updateSalesperson(dt) {
     if (!state.hasSalesperson) return;
 
-    // On Saturday mornings, prompt the player once
-    if (getDayOfWeek() === 6 && state.hour >= 8 && !_salespersonMarketPrompted) {
+    // On market mornings, prompt the player once
+    const isSunday = getDayOfWeek() === 0;
+    const isSaturday = getDayOfWeek() === 6;
+    const sundayOpen = isSunday && hasSkill('comm_sunday_market') && (state.season === 1); // summer only
+    const isMarketDay = isSaturday || sundayOpen;
+
+    if (isMarketDay && state.hour >= 8 && !_salespersonMarketPrompted) {
         _salespersonMarketPrompted = true;
         if (getTotalInventory() > 0 && typeof showMarketSelectModal === 'function') {
             showMarketSelectModal();
         }
     }
-    if (getDayOfWeek() !== 6) _salespersonMarketPrompted = false;
+    if (!isMarketDay) _salespersonMarketPrompted = false;
 
     // Salesperson movement (only when given a shipment via the modal)
     if (salesperson.state === 'movingToShip' || salesperson.state === 'movingToStand') {
@@ -688,11 +1079,13 @@ function updateSalesperson(dt) {
 // ── Growth & Spoilage ─────────────────────────────────────────────────────────
 function updateGrowthAndSpoil(dt) {
     // Incubation colonization
+    const grainSpeedMod = hasSkill('cult_grain_optimization') ? 1.15 : 1.0;
     state.incubationBatches.forEach(bag => {
         if (!bag.isContaminated && bag.colonization < 100) {
-            bag.colonization += state.speciesData[bag.species].colRate * dt;
+            bag.colonization += state.speciesData[bag.species].colRate * grainSpeedMod * dt;
             if (bag.colonization >= 100) bag.colonization = 100;
-            const contamRisk = (state.ambientTemp > 80) ? 0.10 : 0.05;
+            let contamRisk = (state.ambientTemp > 80) ? 0.10 : 0.05;
+            if (hasSkill('cult_sterile_technique')) contamRisk *= 0.95;
             if (bag.doomed && bag.colonization > 30 && Math.random() < contamRisk) {
                 bag.isContaminated = true;
                 logMsg(`Trichoderma Mold! Bag #${bag.id} ruined.`, 'error');
@@ -711,7 +1104,8 @@ function updateGrowthAndSpoil(dt) {
                     batch.colonization = 100;
                     logMsg(`Substrate blocks of ${batch.species} fully colonized! Ready for a tent.`, 'success');
                 }
-                const riskPerSec = 0.0003; // Base risk on shelf
+                let riskPerSec = 0.0003; // Base risk on shelf
+                if (hasSkill('cult_sterile_technique')) riskPerSec *= 0.95;
                 if (batch.doomed && batch.colonization > 30 && Math.random() < riskPerSec * 10 * dt) {
                     batch.isContaminated = true;
                     logMsg(`Sterilization failure! Substrate blocks of ${batch.species} ruined.`, 'error');
@@ -727,7 +1121,10 @@ function updateGrowthAndSpoil(dt) {
     state.tents.forEach(tent => {
         // dynamically recalculate capacity based on filled blocks and biological efficiency
         if (tent.blocksFilled > 0) {
-            const yieldMod = state.speciesData[tent.species].yieldMod || 1.0;
+            let yieldMod = state.speciesData[tent.species].yieldMod || 1.0;
+            if (hasSkill('cult_agar_work')) yieldMod *= 1.10;
+            if (hasSkill('cult_genetic_mod_yield')) yieldMod *= 1.15;
+            yieldMod *= 1.0 + (state.rpYieldBonus || 0) * 0.05;
             const baseFlushYield = tent.flushes === 0 ? 2.0 : (tent.flushes === 1 ? 1.0 : 0.5);
             tent.capacity = tent.blocksFilled * baseFlushYield * yieldMod;
         } else {
@@ -735,7 +1132,8 @@ function updateGrowthAndSpoil(dt) {
         }
         
         if (tent.isGrowing && !tent.isContaminated && tent.currentCrop < tent.capacity) {
-            tent.currentCrop += state.speciesData[tent.species].rate * getTentGrowthMod(tent) * dt;
+            const rpGrowth = 1.0 + (state.rpGrowthBonus || 0) * 0.10;
+            tent.currentCrop += state.speciesData[tent.species].rate * getTentGrowthMod(tent) * rpGrowth * dt;
             if (tent.currentCrop >= tent.capacity) {
                 tent.currentCrop = tent.capacity; tent.isGrowing = false;
                 logMsg(`Tent #${tent.id} max capacity!`, 'success');
@@ -743,7 +1141,10 @@ function updateGrowthAndSpoil(dt) {
             // Running without humidifier or fan raises contamination risk
             if (!tent.hw.hum || !tent.hw.fan) {
                 const missingCount = (!tent.hw.hum ? 1 : 0) + (!tent.hw.fan ? 1 : 0);
-                const riskPerSec = missingCount * 0.0008;
+                let riskPerSec = missingCount * 0.0008;
+                if (hasSkill('cult_sterile_technique')) riskPerSec *= 0.95;
+                if (hasSkill('cult_genetic_mod_resilience')) riskPerSec *= 0.50;
+                riskPerSec *= Math.max(0.1, 1.0 - (state.rpContamBonus || 0) * 0.10);
                 if (Math.random() < riskPerSec * dt) {
                     tent.isContaminated = true;
                     tent.isGrowing = false;

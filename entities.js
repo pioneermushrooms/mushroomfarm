@@ -1,6 +1,5 @@
 // ── DOM Element References ───────────────────────────────────────────────────
 const elMoney = document.getElementById('money-display');
-const elInventory = document.getElementById('inventory-display');
 const elDemand = document.getElementById('demand-display');
 const elPowder = document.getElementById('powder-display');
 const elTincture = document.getElementById('tincture-display');
@@ -28,7 +27,10 @@ const imgs = {
     flowhood:  document.getElementById('img-flowhood'),
     mulch:     document.getElementById('img-mulch'),
     pc:        document.getElementById('img-pc'),
-    barrel:    document.getElementById('img-barrel')
+    barrel:    document.getElementById('img-barrel'),
+    tileConcrete: document.getElementById('img-tile-concrete'),
+    tileGrass:    document.getElementById('img-tile-grass'),
+    tileDirt:     document.getElementById('img-tile-dirt')
 };
 
 const keyedImgs = {};

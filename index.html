@@ -5,66 +5,96 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pixel Spore: Gourmet Mushroom Farm</title>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
-    <header class="game-header" style="flex-wrap: wrap; gap: 10px;">
-        <h1>Pixel Spore Farm</h1>
-        <div class="stats" style="flex: 2; display: flex; flex-wrap: wrap; gap: 15px;">
-            <div style="color:#5eff6b;">Money: $<span id="money-display">500.00</span></div>
-            <div title="Business Rating">Rep: <span id="rep-display" style="color:#ffd700;">★☆☆☆☆</span></div>
-            <div style="color:#5ea1ff; font-weight:bold;">🕒 <span id="clock-display">Starting...</span></div>
-            <div style="color:#aaa;" title="Total days since farm opened">Day <span id="days-op-display" style="color:#ffde5e;">0</span></div>
-            <div style="color:#ff5e5e; font-weight:bold; cursor:help;" title="Labor Hours remaining for the day. Resets on Sleep.">⚡ <span id="labor-display">16</span>/<span id="labor-max-display">16</span> Hrs</div>
-            <div><span id="temp-display" style="color:#ffde5e;">65</span>°F</div>
-            <div style="cursor:help;" title="Total daily energy usage across all equipment">⚡ <span id="energy-display" style="color:#ff9900;">0</span>W — $<span id="energy-cost-display" style="color:#ff5e5e;">0.00</span>/day</div>
+    <div class="game-wrapper">
+    <header class="game-header" style="flex-direction:column; gap:0; padding:0;">
+        <!-- Row 1: Title centered -->
+        <div style="text-align:center; padding:10px 20px 2px 20px;">
+            <h1 style="margin:0;">Pixel Spore Farm</h1>
+            <div id="farm-name-display" style="color:#aaa; font-size:10px; margin-top:2px; font-style:italic;"></div>
         </div>
-        <div style="flex:none; display:flex; gap:10px; flex-wrap:wrap;">
-            <button id="btn-speed" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; background:#1a2430;" title="Toggle Simulation SpeedMultiplier">Speed: 1x</button>
-            <button id="btn-sleep" class="pixel-btn" style="border-color:#9b7fff; color:#9b7fff; background:#1a2430;">😴 Sleep</button>
-            <button id="btn-music" class="pixel-btn" style="border-color:#ff5e5e; color:#ff5e5e; background:#1a2430;">🔇 Music</button>
-            <button id="btn-pause" class="pixel-btn" style="border-color:#ff5e5e; color:#ff5e5e; background:#1a2430;">⏸ Pause</button>
-            <button id="btn-save" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; background:#1a2430;">💾 Save</button>
-            <button id="btn-load" class="pixel-btn" style="border-color:#ffde5e; color:#ffde5e; background:#1a2430;">📂 Load</button>
-            <button id="btn-contracts" class="pixel-btn" style="border-color:#ff9900; color:#ff9900; background:#1a2430;">👔 Contracts</button>
-            <button id="btn-encyclopedia" class="pixel-btn" style="border-color:#5ea1ff; color:#5ea1ff;">🍄 Encyclopedia</button>
+        <!-- Row 2: Stats bar -->
+        <div style="display:flex; justify-content:center; align-items:center; gap:20px; flex-wrap:wrap; padding:8px 20px; border-top:1px solid #405944; border-bottom:1px solid #405944; background:#223328;">
+            <div style="color:#5eff6b;">$<span id="money-display">500.00</span></div>
+            <div>Rep: <span id="rep-display" style="color:#ffd700;">★☆☆☆☆</span></div>
+            <div style="cursor:help;" title="Experience Points">Lv.<span id="level-display" style="color:#9b7fff; font-weight:bold;">1</span> <span id="xp-display" style="color:#aaa; font-size:10px;">0</span>/<span id="xp-next-display" style="color:#aaa; font-size:10px;">100</span></div>
+            <div style="color:#5ea1ff;">🕒 <span id="clock-display">Starting...</span></div>
+            <div style="color:#aaa;">Day <span id="days-op-display" style="color:#ffde5e;">0</span></div>
+            <div style="color:#ff5e5e; cursor:help;" title="Labor Hours remaining">⚡ <span id="labor-display">16</span>/<span id="labor-max-display">16</span></div>
+            <div><span id="temp-display" style="color:#ffde5e;">65</span>°F</div>
+            <div style="cursor:help;" title="Daily energy cost"><span id="energy-display" style="color:#ff9900;">0</span>W $<span id="energy-cost-display" style="color:#ff5e5e;">0.00</span>/d</div>
+        </div>
+        <!-- Row 3: Action buttons -->
+        <div style="display:flex; justify-content:center; align-items:center; gap:6px; flex-wrap:wrap; padding:8px 20px;">
+            <button id="btn-speed" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; background:#1a2430; padding:8px 10px; font-size:9px;">Speed: 1x</button>
+            <button id="btn-sleep" class="pixel-btn" style="border-color:#9b7fff; color:#9b7fff; background:#1a2430; padding:8px 10px; font-size:9px;">😴 Sleep</button>
+            <button id="btn-music" class="pixel-btn" style="border-color:#ff5e5e; color:#ff5e5e; background:#1a2430; padding:8px 10px; font-size:9px;">🔇 Music</button>
+            <button id="btn-pause" class="pixel-btn" style="border-color:#ff5e5e; color:#ff5e5e; background:#1a2430; padding:8px 10px; font-size:9px;">⏸ Pause</button>
+            <button id="btn-save" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; background:#1a2430; padding:8px 10px; font-size:9px;">💾 Save</button>
+            <button id="btn-load" class="pixel-btn" style="border-color:#ffde5e; color:#ffde5e; background:#1a2430; padding:8px 10px; font-size:9px;">📂 Load</button>
+            <button id="btn-contracts" class="pixel-btn" style="border-color:#ff9900; color:#ff9900; background:#1a2430; padding:8px 10px; font-size:9px;">👔 Contracts</button>
+            <button id="btn-encyclopedia" class="pixel-btn" style="border-color:#5ea1ff; color:#5ea1ff; padding:8px 10px; font-size:9px;">🍄 Encyclopedia</button>
+        </div>
+        <!-- Row 4: XP bar -->
+        <div style="width:100%; height:5px; background:#111;">
+            <div id="xp-bar" style="height:100%; background:linear-gradient(90deg, #5b2c9e, #9b7fff); width:0%; transition:width 0.3s;"></div>
         </div>
     </header>
     
     <main class="game-container">
-        <!-- New Left Panel: Cooler -->
-        <section class="panel cooler-panel">
-            <h2 style="margin-top:0; font-size:14px; padding-bottom:8px;">❄️ Cooler</h2>
-            <div id="cooler-shelf" style="display:flex; flex-direction:column; gap:10px; padding: 10px; background: #0c141d; border: 1px solid #333; border-radius: 6px; overflow-y:auto; overflow-x:hidden; min-height:400px; max-height:800px;">
-                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; background:linear-gradient(to bottom, #111, #0a0a0a); padding:8px; border:2px dashed #444; border-radius:6px; min-height:80px;">
-                    <span style="color:#555; font-size:10px; font-family:monospace; margin-bottom:4px; opacity:0.8;">COOLER</span>
-                    <span style="color:#666; font-size:12px; font-weight:bold;">[Empty]</span>
+        <!-- Left Panel: Administration Dashboard -->
+        <section class="panel upgrade-panel">
+            <h2 style="color:#5ea1ff; font-size:12px;">Administration</h2>
+            <div class="upgrade-list" style="display:flex; flex-direction:column; gap:8px;">
+                <button id="btn-cat-strains" class="pixel-btn" style="border-color:#ff9900; color:#ff9900; background:#1a2430; width: 100%; padding:10px; font-size:11px;">🍄 Strains</button>
+                <button id="btn-cat-facilities" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; background:#1a2430; width: 100%; padding:10px; font-size:11px;">⛺ Facilities</button>
+                <button id="btn-cat-lab" class="pixel-btn" style="border-color:#5ea1ff; color:#5ea1ff; background:#1a2430; width: 100%; padding:10px; font-size:11px;">🔬 Lab Ops</button>
+                <button id="btn-cat-logistics" class="pixel-btn" style="border-color:#ffde5e; color:#ffde5e; background:#1a2430; width: 100%; padding:10px; font-size:11px;">🏭 Logistics</button>
+                <button id="btn-supplier-market" class="pixel-btn" style="border-color:#5ea1ff; color:#5ea1ff; background:#0a101a; width: 100%; padding:10px; font-size:11px; display:none;">🛒 Supplier</button>
+                <button id="btn-research-initiative" class="pixel-btn" style="border-color:#9b7fff; color:#9b7fff; background:#10081a; width: 100%; padding:10px; font-size:11px; display:none;">📊 Research</button>
+                <button id="btn-wholesale" class="pixel-btn" style="border-color:#ffd700; color:#ffd700; background:#1a1a0a; width: 100%; padding:10px; font-size:11px; display:none;">🚛 Wholesale</button>
+                <button id="btn-skill-tree" class="pixel-btn" style="border-color:#9b7fff; color:#9b7fff; background:#0d0a1a; width: 100%; padding:10px; font-size:11px; border-width:2px; text-shadow:0 0 8px #9b7fff55;">🧠 Skills <span id="sp-badge" style="background:#9b7fff; color:#000; padding:1px 5px; border-radius:10px; font-size:9px; margin-left:4px; display:none;">0</span></button>
+            </div>
+            <!-- Garage Section -->
+            <div style="margin-top:12px; padding:8px; background:#1a1a10; border:2px solid #555; border-radius:6px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <h3 style="color:#ffde5e; margin:0; font-size:10px;">Garage</h3>
+                    <span id="garage-sqft-display" style="font-size:8px; color:#aaa;"></span>
                 </div>
+                <div style="height:4px; background:#111; border:1px solid #333; border-radius:3px; margin-bottom:6px;">
+                    <div id="garage-sqft-bar" style="height:100%; background:#5eff6b; border-radius:3px; transition:width 0.3s; width:0%;"></div>
+                </div>
+                <div id="garage-equipment" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
             </div>
         </section>
 
         <!-- Center Panel: The Farm Canvas -->
         <section class="panel farm-panel">
-            <h2>The Farm Canvas</h2>
-            <div class="farm-stats">
+            <div class="farm-stats" style="margin-bottom:5px;">
                 <div>Region: <span id="region-display" style="color:#ffde5e;">Unknown</span></div>
-                <div>Contract Target: <span id="demand-display">10</span> lbs</div>
+                <div>Demand: <span id="demand-display">10</span> lbs</div>
             </div>
-            <div style="display:flex; justify-content:center; margin-top: 10px;">
+            <div style="display:flex; justify-content:center;">
                 <canvas id="gameCanvas" width="400" height="400" style="border: 4px solid #222; image-rendering: pixelated;"></canvas>
             </div>
-
-            <!-- Garage Section -->
-            <div style="margin-top:15px; padding:10px; background:#1a1a10; border:2px solid #555; border-radius:6px;">
-                <h3 style="color:#ffde5e; margin:0 0 8px 0; font-size:12px;">Garage</h3>
-                <div id="garage-equipment" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
-            </div>
-
             <!-- Dynamic tent list below canvas -->
-            <div id="tents-container" style="margin-top: 20px;">
-                <!-- Generated dynamically via JS -->
+            <div id="tents-container" style="margin-top: 10px;"></div>
+        </section>
+
+        <!-- Cooler Panel -->
+        <section class="panel cooler-panel">
+            <h2 style="margin-top:0; font-size:11px; padding-bottom:6px;">❄️ Cooler</h2>
+            <div id="cooler-shelf" style="display:flex; flex-direction:column; gap:8px; padding:8px; background:#0c141d; border:1px solid #333; border-radius:6px; overflow-y:auto; overflow-x:hidden; min-height:300px; max-height:700px;">
+                <span style="color:#555; font-size:9px; align-self:center;">[Empty]</span>
             </div>
-            <h2 style="margin-top:20px;">Materials Dashboard</h2>
+        </section>
+
+        <div class="right-panels">
+            <!-- Center Panel: Actions -->
+            <section class="panel action-panel">
+            <h2 style="margin-top:0px;">Materials Dashboard</h2>
             <div id="substrate-dashboard" class="substrate-dashboard">
                 <!-- Visual blocks and grain bags go here -->
             </div>
@@ -73,18 +103,17 @@
             <div class="farm-stats" style="margin-bottom: 10px; border-bottom: 2px dashed #444; padding-bottom:10px;">
                 <div>Powder: <span id="powder-display">0</span> lbs </div>
                 <div>Tinctures: <span id="tincture-display">0</span> btls</div>
+                <div>LCs: <span id="lc-display">0</span></div>
+                <div>Kits: <span id="kit-display">0</span></div>
+                <div style="color:#9b7fff;">RP: <span id="rp-display">0</span></div>
             </div>
             <div class="action-buttons">
                 <button id="btn-dehydrate" class="pixel-btn" style="border-color:#ccc; color:#ccc;">Dehydrate (10lbs)</button>
                 <button id="btn-extract" class="pixel-btn" style="border-color:#5ea1ff; color:#5ea1ff;">Extract (1lb pwd)</button>
                 <button id="btn-sell-goods" class="pixel-btn sell">Sell Goods</button>
             </div>
-        </section>
 
-        <div class="right-panels">
-            <!-- Center Panel: Actions -->
-            <section class="panel action-panel">
-                <h2>Commands</h2>
+                <h2 style="margin-top: 20px;">Commands</h2>
                 <div class="action-buttons">
                     <div class="action-buttons" style="display:flex; gap:5px; margin-bottom: 10px;">
                         <button id="btn-buy-pellets" class="pixel-btn" style="flex:1;">Buy Pellets ($20/100lb)</button>
@@ -97,31 +126,26 @@
                         </select>
                     </div>
                 </div>
-                <div class="action-buttons" style="margin-top:10px;">
-                    <button id="btn-spawn-bulk" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b;" title="Requires 1 Colonized Grain Bag + >=1 Sterile Block">Spawn to Bulk</button>
-                    <button id="btn-discard-mold" class="pixel-btn" style="border-color:#ff5e5e; color:#ff5e5e;">Discard Mold</button>
-                    <button id="btn-clear-spent" class="pixel-btn" style="border-color:#b56a47; color:#b56a47;">Clear Spent Tent</button>
-                    <button id="btn-harvest-auto" class="pixel-btn">Harvest Fullest</button>
-                    <button id="btn-pitch" class="pixel-btn" style="border-color: #ff9900; color: #ff9900;">Pitch ($50+5lbs)</button>
-                    <button id="btn-deliver" class="pixel-btn" style="border-color:#ff9900; color:#ff9900;">📦 Deliver Contracts</button>
-                    <button id="btn-sell" class="pixel-btn sell">🛒 Farmers Market</button>
+                <div class="action-buttons" style="margin-top:10px; display:flex; flex-wrap:wrap; gap:4px;">
+                    <button id="btn-make-lc" class="pixel-btn small" style="border-color:#9b7fff; color:#9b7fff; display:none; padding:6px 8px; font-size:8px;" title="Requires Liquid Culture skill + 1 colonized grain bag">💉 LC</button>
+                    <button id="btn-inoculate-lc" class="pixel-btn small" style="border-color:#9b7fff; color:#9b7fff; display:none; padding:6px 8px; font-size:8px;" title="1 LC inoculates 4 grain bags free">💉 Inoc LC</button>
+                    <button id="btn-research-bench" class="pixel-btn small" style="border-color:#9b7fff; color:#9b7fff; display:none; padding:6px 8px; font-size:8px;" title="$50 + 5lbs → 10 Research Points">🔬 Research</button>
+                    <button id="btn-make-kit" class="pixel-btn small" style="border-color:#ffd700; color:#ffd700; display:none; padding:6px 8px; font-size:8px;" title="1 colonized block batch → 1 Grow Kit">📦 Kit</button>
+                    <button id="btn-spawn-bulk" class="pixel-btn small" style="border-color:#5eff6b; color:#5eff6b; padding:6px 8px; font-size:8px;" title="Requires 1 Colonized Grain Bag + >=1 Sterile Block">Spawn Bulk</button>
+                    <button id="btn-discard-mold" class="pixel-btn small" style="border-color:#ff5e5e; color:#ff5e5e; padding:6px 8px; font-size:8px;">Discard</button>
+                    <button id="btn-clear-spent" class="pixel-btn small" style="border-color:#b56a47; color:#b56a47; padding:6px 8px; font-size:8px;">Clear Tent</button>
+                    <button id="btn-harvest-auto" class="pixel-btn small" style="padding:6px 8px; font-size:8px;">Harvest</button>
+                    <button id="btn-pitch" class="pixel-btn small" style="border-color:#ff9900; color:#ff9900; padding:6px 8px; font-size:8px;">Pitch</button>
+                    <button id="btn-deliver" class="pixel-btn small" style="border-color:#ff9900; color:#ff9900; padding:6px 8px; font-size:8px;">📦 Deliver</button>
+                    <button id="btn-sell" class="pixel-btn small sell" style="padding:6px 8px; font-size:8px;">🛒 Market</button>
                 </div>
 
-                <div id="log" class="game-log" style="height: 100px; margin-top:15px;"></div>
+                <div id="log" class="game-log" style="height: 200px; margin-top:15px;"></div>
             </section>
 
-            <!-- Right Panel: Market & Upgrades -->
-            <section class="panel upgrade-panel">
-                <h2 style="color:#5ea1ff;">Administration Dashboard</h2>
-                <div class="upgrade-list" style="display:flex; flex-direction:column; gap:15px;">
-                    <button id="btn-cat-strains" class="pixel-btn" style="border-color:#ff9900; color:#ff9900; background:#1a2430; width: 100%; padding:15px; font-size:14px;">🍄 Cultivation Strains</button>
-                    <button id="btn-cat-facilities" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; background:#1a2430; width: 100%; padding:15px; font-size:14px;">⛺ Fruiting Facilities</button>
-                    <button id="btn-cat-lab" class="pixel-btn" style="border-color:#5ea1ff; color:#5ea1ff; background:#1a2430; width: 100%; padding:15px; font-size:14px;">🔬 Lab & Substrate Ops</button>
-                    <button id="btn-cat-logistics" class="pixel-btn" style="border-color:#ffde5e; color:#ffde5e; background:#1a2430; width: 100%; padding:15px; font-size:14px;">🏭 Commercial Logistics</button>
-                </div>
-            </section>
         </div>
     </main>
+    </div>
 
     <!-- Preload Assets -->
     <div style="display:none;">
@@ -144,6 +168,83 @@
         <!-- Phase 9 Assets -->
         <img id="img-pc" src="pressure_cooker_34.png" alt="cooker">
         <img id="img-barrel" src="steam_barrel_34.png" alt="barrel">
+        <!-- Tile Assets -->
+        <img id="img-tile-concrete" src="tile_garage_concrete.png" alt="concrete">
+        <img id="img-tile-grass" src="tile_grass.png" alt="grass">
+        <img id="img-tile-dirt" src="tile_dirt_path.png" alt="dirt">
+    </div>
+
+    <!-- Client Profile Modal -->
+    <div id="modal-client-profile" class="modal-overlay" style="z-index: 2800; display:none;">
+        <div class="modal-content" style="border-color:#ff9900; background:#1a1510; max-width:400px; width:100%; text-align:center;">
+            <span class="modal-close" id="btn-close-client-profile">X</span>
+            <img id="cp-portrait" src="" style="width:80px; height:80px; image-rendering:pixelated; border:3px solid #ff9900; border-radius:8px; margin-bottom:8px;">
+            <h2 id="cp-name" style="color:#ffde5e; margin:0 0 4px 0; font-size:14px;"></h2>
+            <p id="cp-dialogue" style="color:#aaa; font-size:9px; font-style:italic; margin-bottom:10px;"></p>
+            <div id="cp-details" style="text-align:left; font-size:10px; line-height:2; padding:10px; background:#111; border:1px solid #333; border-radius:4px;"></div>
+            <div id="cp-actions" style="margin-top:10px; display:flex; gap:6px;"></div>
+        </div>
+    </div>
+
+    <!-- Wholesale Orders Modal -->
+    <div id="modal-wholesale" class="modal-overlay" style="z-index: 2750; display:none;">
+        <div class="modal-content" style="border-color:#ffd700; background:#1a1a0a; max-width:500px; width:100%;">
+            <span class="modal-close" id="btn-close-wholesale">X</span>
+            <h2 style="color:#ffd700; margin-top:0; font-size:14px;">🚛 Wholesale Orders</h2>
+            <p style="font-size:9px; color:#aaa;">Bulk orders at discount rates. High volume, tight deadlines. New orders arrive Fridays.</p>
+            <div id="wholesale-listings" style="display:flex; flex-direction:column; gap:8px; margin-top:10px; max-height:50vh; overflow-y:auto;"></div>
+        </div>
+    </div>
+
+    <!-- Equipment Breakdown Modal -->
+    <div id="modal-breakdown" class="modal-overlay" style="z-index: 3500; display:none;">
+        <div class="modal-content" style="border-color:#ff5e5e; background:#1a0505; max-width:420px; text-align:center;">
+            <h2 style="color:#ff5e5e; margin-top:0; font-size:16px; text-shadow:0 0 10px #ff000066;">EQUIPMENT FAILURE</h2>
+            <div id="breakdown-icon" style="font-size:48px; margin:10px 0;">⚠</div>
+            <p id="breakdown-desc" style="color:#fff; font-size:11px; line-height:1.6;"></p>
+            <p id="breakdown-effect" style="color:#ff9900; font-size:10px; font-style:italic;"></p>
+            <div id="breakdown-severity" style="font-size:9px; margin:8px 0; padding:4px 8px; display:inline-block; border-radius:3px;"></div>
+            <div id="breakdown-cost" style="color:#ffde5e; font-size:12px; margin:10px 0;"></div>
+            <div style="display:flex; gap:8px; margin-top:15px;">
+                <button id="btn-repair" class="pixel-btn" style="border-color:#5eff6b; color:#5eff6b; flex:1; padding:12px;">🔧 Repair</button>
+                <button id="btn-ignore-breakdown" class="pixel-btn" style="border-color:#555; color:#aaa; flex:1; padding:12px;">Ignore</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Supplier Market Modal -->
+    <div id="modal-supplier" class="modal-overlay" style="z-index: 2750; display:none;">
+        <div class="modal-content" style="border-color:#5ea1ff; background:#0a101a; max-width:500px; width:100%;">
+            <span class="modal-close" id="btn-close-supplier">X</span>
+            <h2 style="color:#5ea1ff; margin-top:0; font-size:14px;">🛒 Supplier Market</h2>
+            <p style="font-size:9px; color:#aaa;">Refreshes weekly on Mondays. Prices fluctuate by season.</p>
+            <div id="supplier-listings" style="display:flex; flex-direction:column; gap:6px; margin-top:10px; max-height:50vh; overflow-y:auto;"></div>
+        </div>
+    </div>
+
+    <!-- Research Initiative Modal -->
+    <div id="modal-research" class="modal-overlay" style="z-index: 2750; display:none;">
+        <div class="modal-content" style="border-color:#9b7fff; background:#10081a; max-width:450px; width:100%;">
+            <span class="modal-close" id="btn-close-research">X</span>
+            <h2 style="color:#9b7fff; margin-top:0; font-size:14px;">📊 Research Initiative</h2>
+            <p style="font-size:9px; color:#aaa;">Spend Research Points on permanent global bonuses.</p>
+            <div style="font-size:10px; color:#9b7fff; margin-bottom:10px;">Available RP: <strong id="research-rp-avail">0</strong></div>
+            <div id="research-options" style="display:flex; flex-direction:column; gap:6px;"></div>
+        </div>
+    </div>
+
+    <!-- Skill Tree Modal -->
+    <div id="modal-skill-tree" class="modal-overlay" style="z-index: 2800; display:none;">
+        <div class="modal-content skill-tree-modal" style="max-width:900px; width:95%; background:#0a0a14; border-color:#9b7fff; padding:0; overflow:hidden;">
+            <div class="skill-tree-header">
+                <span class="modal-close" id="btn-close-skill-tree" style="position:absolute; right:15px; top:12px; z-index:2;">X</span>
+                <h2 style="color:#9b7fff; margin:0; font-size:16px; text-shadow:0 0 12px #9b7fff88;">SKILL TREE</h2>
+                <div style="font-size:10px; color:#aaa; margin-top:4px;">Level <span id="st-level" style="color:#9b7fff;">1</span> | <span id="st-sp" style="color:#ffd700;">0</span> Skill Points Available</div>
+            </div>
+            <div id="skill-tree-container" class="skill-tree-container">
+                <!-- 4 branch columns rendered by JS -->
+            </div>
+        </div>
     </div>
 
     <!-- The Encyclopedia Modal -->
@@ -200,6 +301,12 @@
             <h1 style="color:#5eff6b; font-size: 28px; margin-bottom: 5px; text-shadow: 2px 2px #000;">Pixel Spore Farm Simulation</h1>
             <p style="color:#aaa; font-size: 12px; margin-bottom: 25px;">Design your farm's startup constraints before beginning the simulation loop.</p>
             
+            <div style="text-align: left; background:#000; padding:15px; border-radius:8px; border:2px solid #444; margin-bottom: 20px;">
+                <label style="display:block; color:#ffde5e; margin-bottom:5px; font-weight:bold;">Farm Name</label>
+                <input type="text" id="setup-farmname" class="pixel-select" style="width:100%; padding:10px; font-size:14px;" value="My Mushroom Farm" maxlength="30">
+                <p style="color:#888; font-size:10px; margin-top:5px; font-style:italic;">Name your operation. This is your brand.</p>
+            </div>
+
             <div style="text-align: left; background:#000; padding:15px; border-radius:8px; border:2px solid #444; margin-bottom: 20px;">
                 <label style="display:block; color:#ffde5e; margin-bottom:5px; font-weight:bold;">Starting Capital ($)</label>
                 <input type="number" id="setup-funding" class="pixel-select" style="width:100%; padding:10px; font-size:16px;" value="1500" min="500" max="1000000">
@@ -387,9 +494,9 @@
 
     <audio id="bgm"></audio>
 
-    <script src="state.js?v=3"></script>
-    <script src="entities.js?v=3"></script>
-    <script src="engine.js?v=3"></script>
-    <script src="ui.js?v=3"></script>
+    <script src="state.js?v=20"></script>
+    <script src="entities.js?v=20"></script>
+    <script src="engine.js?v=20"></script>
+    <script src="ui.js?v=20"></script>
 </body>
 </html>
